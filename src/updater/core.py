@@ -55,7 +55,7 @@ def atomic_json(path, obj):
 
 
 def safe_rel(value):
-    if not isinstance(value, str) or not value or "\\" in value or ":" in value:
+    if not isinstance(value, str) or not value or "\\" in value or ":" in value or "//" in value:
         raise UpdateError("Nieprawidłowa ścieżka pliku.")
     p = PurePosixPath(value)
     if p.is_absolute() or any(part in (".", "..") for part in value.split("/")):
@@ -422,6 +422,7 @@ class Updater:
             atomic_json(self.installed, manifest)
             record["state"] = "committed"
             atomic_json(self.journal, record)
+            atomic_json(self.state / "last-rollback.json", record)
             self.journal.unlink()
             report("Aktualizacja zakończona: " + str(manifest["release_id"]))
             return True
@@ -447,6 +448,9 @@ class Updater:
         if not history.is_file():
             raise UpdateError("Brak zarejestrowanej kopii do rollbacku.")
         record = json.loads(history.read_text(encoding="utf-8"))
+        record["state"] = "activating"
+        atomic_json(self.journal, record)
         self._restore(record)
+        self.journal.unlink()
         history.unlink()
         return record["release_id"]
