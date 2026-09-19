@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "project": "FROSTMOURNE",
+  "target": {"product":"World of Warcraft","version":"3.3.5a","build":12340,"platform":"Windows","architecture":"x86"},
+  "entrypoints": {
+    "ai_rules":"AGENTS.md",
+    "ai_start":"AI_START_HERE.md",
+    "stable":"CURRENT.json",
+    "runtime":"runtime/current.json",
+    "workflow":"docs/WORKFLOW.md"
+  },
+  "modules": [],
+  "tools": [
+    {"id":"verify_repo","path":"tools/verify_repo.py","purpose":"Repository structure, manifest relationships, baseline and canonical-source checks."},
+    {"id":"verify_current","path":"tools/verify_current.py","purpose":"Active runtime integrity, SHA256, PE architecture, dependencies and compatibility checks."},
+    {"id":"package_runtime","path":"tools/make_runtime_package.py","purpose":"Create deterministic ZIP from the active runtime manifest."}
+  ],
+  "docs": ["docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md"]
+}
