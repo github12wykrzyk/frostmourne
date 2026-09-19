@@ -1,0 +1,16 @@
+build/
+dist/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.exe
+*.dll
+!artifacts/**/*.exe
+!artifacts/**/*.dll
+*.dmp
+*.log
+__pycache__/
+.pytest_cache/
+.venv/
