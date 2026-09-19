@@ -1,0 +1,59 @@
+name: bootstrap-local-x86-smoke
+
+on:
+  push:
+    branches: [work]
+    paths:
+      - 'src/bootstrap/**'
+      - 'tools/package_local_bootstrap.py'
+      - 'docs/BOOTSTRAP_LOCAL_TEST.md'
+      - '.github/workflows/bootstrap-local-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-windows-x86-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify recorded reference client and repository
+        shell: cmd
+        run: |
+          python tools/verify_reference_client.py
+          if errorlevel 1 exit /b 1
+          python tools/verify_current.py
+          if errorlevel 1 exit /b 1
+          python tools/verify_repo.py
+          if errorlevel 1 exit /b 1
+      - name: Build minimal DLL and self-process smoke tester for Windows x86
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSINSTALL=%%i
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x86 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          if not exist dist mkdir dist
+          cl /nologo /W4 /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c /link /INCREMENTAL:NO
+          if errorlevel 1 exit /b 1
+          cl /nologo /W4 /MT /Fe:dist\FrostmourneLocalSmoke.exe src\bootstrap\local_smoke.c /link /INCREMENTAL:NO
+          if errorlevel 1 exit /b 1
+          dist\FrostmourneLocalSmoke.exe
+          if errorlevel 1 exit /b 1
+      - name: Verify x86 PE, imports, exports, SHA256 and complete ZIP
+        shell: cmd
+        run: |
+          python -m pip install pefile==2024.8.26
+          if errorlevel 1 exit /b 1
+          python tools/package_local_bootstrap.py
+          if errorlevel 1 exit /b 1
+      - name: Upload local-only diagnostic test ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: frostmourne-bootstrap-local-x86
+          path: dist/frostmourne-bootstrap-local-x86.zip
+          if-no-files-found: error
