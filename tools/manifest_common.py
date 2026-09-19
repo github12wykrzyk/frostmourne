@@ -33,7 +33,7 @@ def pe_machine(path: Path) -> int:
             raise ValueError("truncated DOS header")
         off = struct.unpack("<I", raw)[0]
         f.seek(off)
-        if f.read(4) != b"PE\\0\\0":
+        if f.read(4) != b"PE\0\0":
             raise ValueError("missing PE signature")
         raw = f.read(2)
         if len(raw) != 2:
