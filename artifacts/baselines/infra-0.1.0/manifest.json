@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "baseline_id": "infra-0.1.0",
+  "kind": "infrastructure",
+  "created_at": "2026-09-20",
+  "runtime_manifest": "runtime/current.json",
+  "runtime_release_id": null,
+  "required_files": [
+    "AGENTS.md","AI_START_HERE.md","AI_INDEX.json","CURRENT.json","runtime/current.json",
+    "tools/verify_repo.py","tools/verify_current.py","tools/make_runtime_package.py",
+    "docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md",".github/workflows/verify.yml"
+  ],
+  "note": "No game binaries exist in this baseline; SHA256 requirements apply when runtime files are introduced."
+}
