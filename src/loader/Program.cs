@@ -325,10 +325,23 @@ namespace FrostmourneGui {
         }
     }
     internal static class Program {
-        [STAThread] static void Main() {
+        [STAThread] static int Main(string[] args) {
+            if (args.Length == 1 && args[0] == "--self-test") {
+                try {
+                    string root = Application.StartupPath;
+                    string dll = System.IO.Path.Combine(root, "FrostmourneBootstrap.dll");
+                    string[] pin = File.ReadAllText(System.IO.Path.Combine(root, "bootstrap.sha256")).Trim().Split(' ');
+                    if (pin.Length != 2 || !File.Exists(dll)) return 2;
+                    Verify.Pe32(dll, true);
+                    if (Verify.Hash(dll) != pin[0].ToLowerInvariant() ||
+                        new FileInfo(dll).Length.ToString() != pin[1]) return 3;
+                    return 0;
+                } catch { return 4; }
+            }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainWindow());
+            return 0;
         }
     }
 }
