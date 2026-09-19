@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "project": "FROSTMOURNE",
+  "target": {"product":"World of Warcraft","version":"3.3.5a","build":12340,"platform":"Windows","architecture":"x86"},
+  "release_id": null,
+  "state": "empty",
+  "canonical_source_policy": "Each active runtime file must point to one repository source path or an explicitly documented external/generated source.",
+  "files": [],
+  "compatibility_sets": []
+}
