@@ -74,3 +74,38 @@ jobs:
               machine=struct.unpack('<H',f.read(2))[0]
           assert machine==0x014c, hex(machine)
           print('x86 PE smoke: PASS')
+
+
+  updater-windows-x86:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x86
+      - name: Verify 32-bit Python and updater unit tests
+        shell: pwsh
+        run: |
+          python -c "import struct; assert struct.calcsize('P') == 4, 'Expected x86 Python'"
+          python -m unittest discover -s tests -v
+          python tools/verify_repo.py
+          python tools/verify_current.py
+          python tools/verify_reference_client.py
+      - name: Build Windows x86 standalone GUI executable
+        shell: pwsh
+        run: |
+          python -m pip install pyinstaller==6.16.0
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name FrostmourneUpdater --paths . src/updater/launcher.py
+      - name: Verify updater PE architecture and package installable ZIP
+        shell: pwsh
+        run: |
+          python -c "import pathlib,struct; p=pathlib.Path('dist/FrostmourneUpdater.exe'); b=p.read_bytes(); assert b[:2]==b'MZ'; o=struct.unpack_from('<I',b,0x3c)[0]; assert b[o:o+4]==b'PE\x00\x00'; m=struct.unpack_from('<H',b,o+4)[0]; assert m==0x14c, hex(m); print('UPDATER WINDOWS X86: PASS',len(b),'bytes')"
+          Copy-Item docs/UPDATER.md dist/README-UPDATER.md
+          Compress-Archive -Path dist/FrostmourneUpdater.exe,dist/README-UPDATER.md -DestinationPath dist/frostmourne-updater-win-x86.zip -Force
+          Get-FileHash dist/FrostmourneUpdater.exe -Algorithm SHA256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frostmourne-updater-win-x86
+          path: dist/frostmourne-updater-win-x86.zip
+          if-no-files-found: error
