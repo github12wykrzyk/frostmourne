@@ -14,9 +14,20 @@
     "stable": "CURRENT.json",
     "runtime": "runtime/current.json",
     "workflow": "docs/WORKFLOW.md",
-    "target_client": "reference/client/reference.json"
+    "target_client": "reference/client/reference.json",
+    "updater_release": "updates/work.json"
   },
-  "modules": [],
+  "modules": [
+    {
+      "id": "updater",
+      "source": "src/updater",
+      "docs": "docs/UPDATER.md",
+      "platform": "Windows x86",
+      "status": "experimental",
+      "distribution": "GitHub Actions artifact frostmourne-updater-win-x86",
+      "release_manifest": "updates/work.json"
+    }
+  ],
   "tools": [
     {
       "id": "verify_repo",
@@ -51,6 +62,7 @@
     "reference/client/README.md",
     "docs/CLIENT_PE_AUDIT.md",
     "docs/LOADER_UPDATER_ARCHITECTURE.md",
-    "reference/client/pe_audit.json"
+    "reference/client/pe_audit.json",
+    "docs/UPDATER.md"
   ]
 }
