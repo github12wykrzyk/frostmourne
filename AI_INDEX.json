@@ -1,21 +1,56 @@
 {
   "schema_version": 1,
   "project": "FROSTMOURNE",
-  "target": {"product":"World of Warcraft","version":"3.3.5a","build":12340,"platform":"Windows","architecture":"x86"},
+  "target": {
+    "product": "World of Warcraft",
+    "version": "3.3.5a",
+    "build": 12340,
+    "platform": "Windows",
+    "architecture": "x86"
+  },
   "entrypoints": {
-    "ai_rules":"AGENTS.md",
-    "ai_start":"AI_START_HERE.md",
-    "stable":"CURRENT.json",
-    "runtime":"runtime/current.json",
-    "workflow":"docs/WORKFLOW.md",
-    "target_client":"reference/client/reference.json"
+    "ai_rules": "AGENTS.md",
+    "ai_start": "AI_START_HERE.md",
+    "stable": "CURRENT.json",
+    "runtime": "runtime/current.json",
+    "workflow": "docs/WORKFLOW.md",
+    "target_client": "reference/client/reference.json"
   },
   "modules": [],
   "tools": [
-    {"id":"verify_repo","path":"tools/verify_repo.py","purpose":"Repository structure, manifest relationships, baseline and canonical-source checks."},
-    {"id":"verify_current","path":"tools/verify_current.py","purpose":"Active runtime integrity, SHA256, PE architecture, dependencies and compatibility checks."},
-    {"id":"verify_reference_client","path":"tools/verify_reference_client.py","purpose":"Verify the exact registered WoW 3.3.5a build 12340 x86 client fingerprint before client-dependent work."},
-    {"id":"package_runtime","path":"tools/make_runtime_package.py","purpose":"Create deterministic ZIP from the active runtime manifest."}
+    {
+      "id": "verify_repo",
+      "path": "tools/verify_repo.py",
+      "purpose": "Repository structure, manifest relationships, baseline and canonical-source checks."
+    },
+    {
+      "id": "verify_current",
+      "path": "tools/verify_current.py",
+      "purpose": "Active runtime integrity, SHA256, PE architecture, dependencies and compatibility checks."
+    },
+    {
+      "id": "verify_reference_client",
+      "path": "tools/verify_reference_client.py",
+      "purpose": "Verify the exact registered WoW 3.3.5a build 12340 x86 client fingerprint before client-dependent work."
+    },
+    {
+      "id": "package_runtime",
+      "path": "tools/make_runtime_package.py",
+      "purpose": "Create deterministic ZIP from the active runtime manifest."
+    },
+    {
+      "id": "audit_reference_client",
+      "path": "tools/audit_reference_client.py",
+      "purpose": "Read-only fingerprint-gated PE audit; compare against committed measured report."
+    }
   ],
-  "docs": ["docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md","reference/client/README.md"]
+  "docs": [
+    "docs/WORKFLOW.md",
+    "docs/MANIFESTS.md",
+    "docs/BASELINES.md",
+    "reference/client/README.md",
+    "docs/CLIENT_PE_AUDIT.md",
+    "docs/LOADER_UPDATER_ARCHITECTURE.md",
+    "reference/client/pe_audit.json"
+  ]
 }
