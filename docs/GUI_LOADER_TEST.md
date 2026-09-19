@@ -10,6 +10,14 @@ The bundled DLL is parsed and SHA256-checked but never loaded or initialized ins
 
 Only the bundled, pinned FrostmourneBootstrap.dll is approved for disk verification. Additional DLLs may be added/disabled in the GUI, but enabling an external DLL without its reviewed ABI/dependency manifest fails validation and blocks launch. The package-time audit checks x86 PE32, non-DLL vs DLL flags, bootstrap exports, DLL imports/dependencies and hashes. Do not treat package-time checks as a security approval for arbitrary modules.
 
+## Native extension gate audit (2026-09-20)
+
+The project reviewed the registered PE32/I386 client (`reference/client/pe_audit.json`), GUI supervisor and bootstrap exports. The PE imports `LoadLibraryA`, `DINPUT8.dll` and other system/vendor DLLs, but this is not evidence of a public plug-in protocol for arbitrary external native DLLs. The static client export table exposes `AssertAndCrash`, not an extension registration/initialization API. The publisher describes its own internal native client extension but does not document a third-party DLL ABI, loader registration interface or permission for the project bootstrap. Ordinary game UI add-ons use the Lua interface and do not load native DLLs. No supported external native extension mechanism was established for this exact client.
+
+The GUI therefore reports **mechanizm_rozszerzen=BRAK** (no VERIFIED mechanism), followed by **zaladowanie_DLL=NIEPRZETESTOWANE**, **inicjalizacja_ABI=NIEPRZETESTOWANE** and **potwierdzenie_PID_wewnatrz_DLL=NIEPRZETESTOWANE**, with `win32=NIE_DOTYCZY` because no native load was attempted. It also logs separately disk verification and game launch PASS/FAIL and actual CreateProcess Win32 errors where available. `BRAK` means unavailable under this task's verified-supported-mechanism requirement, not proof that no private mechanism exists. Existing debug/release bootstrap and GUI remain diagnostic artifacts; the prior Defender detection of FrostmourneLocalLoad.exe is not assumed false-positive. No game or DLL initialization is simulated.
+
+Result: **in-process DLL initialization was NOT carried out**, and the diagnostic game launcher still starts the exact fingerprint-pinned Wow.exe without changing it. Do not mistake the shipped ZIP for an in-process test package. The operator must provide a documented authorized native extension contract before a subsequent in-process implementation can be designed.
+
 ## Use on an authorized local client
 
 1. Extract the whole ZIP outside the game folder, preserving FrostmourneGui.exe, FrostmourneBootstrap.dll and bootstrap.sha256 together. Do not run FrostmourneLocalLoad.exe and do not add antivirus exclusions.
