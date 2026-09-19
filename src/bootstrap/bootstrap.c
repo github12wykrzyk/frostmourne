@@ -10,10 +10,11 @@ static FILETIME g_attached_at;
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
     (void)reserved;
+    (void)instance;
     if (reason == DLL_PROCESS_ATTACH) {
         g_pid = GetCurrentProcessId();
         GetSystemTimeAsFileTime(&g_attached_at);
-        DisableThreadLibraryCalls(instance);
+        /* Preserve thread notifications for statically linked CRT. */
     }
     return TRUE;
 }
