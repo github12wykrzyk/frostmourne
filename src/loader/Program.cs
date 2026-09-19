@@ -276,7 +276,7 @@ namespace FrostmourneGui {
                 gameInfo.Text = "Gra: URUCHOMIONA (supervisor)";
                 resultInfo.Text = "MECHANIZM DLL: BRAK | DLL W WOW: NIEPRZETESTOWANE";
                 Write("ETAP weryfikacja_klienta=PASS build=12340 sha256=" + verifiedHash + " pid=" + game.Id);
-                Write("ETAP weryfikacja_DLL=PASS dyskowy_pin_sha256=" + pinnedHash + " pid=" + game.Id);
+                Write("ETAP weryfikacja_DLL=" + (selected.Exists(m => m.Enabled) ? "PASS dyskowy_pin_sha256=" + pinnedHash : "POMINIETA wszystkie_DLL_wylaczone") + " pid=" + game.Id);
                 Write("ETAP uruchomienie_gry=PASS pid=" + game.Id);
                 Write("ETAP mechanizm_rozszerzen=BRAK pid=" + game.Id);
                 Write("ETAP zaladowanie_DLL=NIEPRZETESTOWANE pid=" + game.Id + " win32=NIE_DOTYCZY");
