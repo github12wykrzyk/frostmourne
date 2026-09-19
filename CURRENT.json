@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "baseline_id": "infra-0.1.0",
+  "channel": "stable",
+  "state": "infrastructure-only",
+  "runtime_manifest": "runtime/current.json",
+  "baseline_manifest": "artifacts/baselines/infra-0.1.0/manifest.json",
+  "accepted_at": "2026-09-20",
+  "notes": "Initial independent FROSTMOURNE infrastructure baseline. No game runtime binaries are active."
+}
