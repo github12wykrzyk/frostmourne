@@ -25,3 +25,17 @@ Code 0 means **only** the unique Wow.exe PID, readable on-disk reference fingerp
 The Windows x86 job compiles the read-only diagnostic using MSVC, executes its no-game branch on a clean runner (CI environment suppresses the dialog), checks PE32 architecture/imports and standalone dependencies, and validates ZIP entries and SHA256. It runs `tools/verify_reference_client.py`, `tools/verify_current.py` and `tools/verify_repo.py`. The job does not run Whitemane and does not claim an in-game outcome.
 
 No client EXE or bootstrap DLL is distributed in this diagnostic package. `runtime/current.json`, `CURRENT.json`, `main` and the existing bootstrap ABI remain unchanged.
+
+## Field result: 2026-09-20 (user screenshot, Windows x64 host)
+
+The user ran the compiled read-only process checker while the game was visibly running and supplied a screenshot of its result dialog. This is **field evidence supplied by the user**, not an in-process CI test or a DLL load. The result reported:
+
+- Exactly one identified `Wow.exe`, PID `19576` (transient; do not reuse as a process identifier in later sessions).
+- Full image path points to the `Whitemane\\Games\\FrostmourneRebuffed\\Wow.exe` installation, rather than to a launcher.
+- Diagnostic and process WOW64 flags both equal `1`, consistent with x86 binaries on this Windows x64 installation.
+- On-disk EXE file size `7704216`; SHA256 `edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd`, matching the registered client reference. This does **not** attest the process memory image.
+- Diagnostic exit/result code `0`; no `FrostmourneBootstrap.dll` reported on the target module list. ABI execution in Wow.exe remains **unverified**.
+
+Milestones: local bootstrap DLL smoke **PASS** (separately confirmed in earlier user test); actual Wow.exe process identification and file fingerprint **PASS** (user screenshot); bootstrap loaded and code executed inside Wow.exe **NOT TESTED / NOT CONFIRMED**. No inject/attach operation was attempted by the read-only checker; do not equate this result to a successful injection or infer a particular client protection policy from an absent module.
+
+The original screenshot and any process-check log reside in the user conversation/local machine, not in the repository; do not commit screenshots that contain personal system paths or environment details. The next in-process milestone needs a verified, permitted entry point plus independently observed in-process ABI initialization, with process PID and module identity cross-checked. No game DLL or EXE has been added to the active runtime.
