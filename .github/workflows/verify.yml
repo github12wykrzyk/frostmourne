@@ -22,7 +22,7 @@ jobs:
       - name: Verify active runtime
         run: python tools/verify_current.py
       - name: Unit tests
-        run: python -m pytest -q
+        run: python -m unittest discover -s tests -v
       - name: Rebuild deterministic runtime package
         run: python tools/make_runtime_package.py --output dist/frostmourne-runtime.zip
       - uses: actions/upload-artifact@v4
