@@ -204,15 +204,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", default=None)
     parser.add_argument("--output", default="dist/reference-client-pe-audit.json")
+    parser.add_argument("--check-recorded", action="store_true", help="Fail if the committed PE inventory differs from this exact-file audit.")
     args = parser.parse_args()
     expected = json.loads(METADATA.read_text(encoding="utf-8"))
     path = Path(args.path) if args.path else ROOT / expected["repository_path"]
     report = audit(path, expected)
+    if args.check_recorded:
+        recorded = json.loads((ROOT / "reference/client/pe_audit.json").read_text(encoding="utf-8"))
+        if report != recorded:
+            raise ValueError("Committed PE audit inventory differs from current exact-file audit")
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print("REFERENCE PE AUDIT: PASS")
-    print("FROSTMOURNE_PE_AUDIT_JSON=" + json.dumps(report, separators=(",", ":"), ensure_ascii=True))
+    print("sha256=" + report["sha256"] + " sections=" + str(len(report["sections"]))
+          + " imported_dlls=" + str(len(report["imports"]))
+          + " imported_functions=" + str(sum(len(group["functions"]) for group in report["imports"])))
 
 
 if __name__ == "__main__":
