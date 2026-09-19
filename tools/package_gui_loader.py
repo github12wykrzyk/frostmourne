@@ -74,6 +74,20 @@ def main() -> int:
             "bootstrap.sha256": {"sha256": sha(pin), "size_bytes": len(pin)},
             "README-LOADER.md": {"sha256": sha(readme), "size_bytes": len(readme)},
         }
+        payloads = {
+            dll.name: dll.read_bytes(),
+            debug_dll.name: debug_dll.read_bytes(),
+            exe.name: exe.read_bytes(),
+            debug_exe.name: debug_exe.read_bytes(),
+            "bootstrap.sha256": pin,
+            "README-LOADER.md": readme,
+        }
+        for optional in ("FrostmourneGuiDebug.pdb", "FrostmourneBootstrapDebug.pdb"):
+            q = DIST / optional
+            if q.is_file():
+                data = q.read_bytes()
+                payloads[optional] = data
+                files[optional] = {"sha256": sha(data), "size_bytes": len(data)}
         manifest = {
             "schema_version": 1,
             "test_kind": "gui-launch-without-injection",
@@ -84,21 +98,7 @@ def main() -> int:
             "active_runtime": False,
             "files": files,
         }
-        payloads = {
-            dll.name: dll.read_bytes(),
-            debug_dll.name: debug_dll.read_bytes(),
-            exe.name: exe.read_bytes(),
-            debug_exe.name: debug_exe.read_bytes(),
-            "bootstrap.sha256": pin,
-            "README-LOADER.md": readme,
-            "test_manifest.json": (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode("utf-8"),
-        }
-        for optional in ("FrostmourneGuiDebug.pdb", "FrostmourneBootstrapDebug.pdb"):
-            q = DIST / optional
-            if q.is_file():
-                data = q.read_bytes()
-                payloads[optional] = data
-                files[optional] = {"sha256": sha(data), "size_bytes": len(data)}
+        payloads["test_manifest.json"] = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
         if "Wow.exe" in payloads or any("LocalLoad" in f for f in payloads):
             raise ValueError("forbidden legacy executable in package")
