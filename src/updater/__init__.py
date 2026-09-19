@@ -1,0 +1,1 @@
+"""FROSTMOURNE standalone updater."""
