@@ -63,13 +63,14 @@ namespace FrostmourneGui {
         long pinnedSize = 0;
         bool loading = false;
         bool checking = false;
+        string dllState = "NIEPRZETESTOWANE";
 
         internal MainWindow() {
             folder = System.IO.Path.Combine(home, "logs");
             settings = System.IO.Path.Combine(home, "loader.cfg");
             log = System.IO.Path.Combine(folder, "gui-loader-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + ".log");
             Directory.CreateDirectory(folder);
-            Text = "FROSTMOURNE  |  Diagnostic Launcher x86";
+            Text = "FROSTMOURNE  |  DLL Loader x86 (experimental)";
             Size = new Size(1060, 815);
             MinimumSize = new Size(1060, 815);
             StartPosition = FormStartPosition.CenterScreen;
@@ -84,7 +85,7 @@ namespace FrostmourneGui {
             poll.Interval = 1000;
             poll.Tick += (s, e) => PollGame();
             poll.Start();
-            Write("GUI START: osobny supervisor; brak iniekcji, hookow i zdalnego LoadLibrary.");
+            Write("GUI START: kontrolowane x86 LoadLibraryW -> FrostmourneBootstrap ABI; bez hookow i ukrywania.");
             Write("Zgodnosc klienta: 3.3.5a build 12340, PE32 x86, scisly SHA256.");
             FormClosing += (s, e) => { Save(); poll.Stop(); /* Nie zamykaj gry przy zamknieciu GUI. */ };
         }
@@ -257,7 +258,7 @@ namespace FrostmourneGui {
             try {
                 if (game != null && !game.HasExited) { Write("FAIL: wlasny proces Wow juz uruchomiony PID=" + game.Id); return; }
                 game = null; pidInfo.Text = "PID: --"; gameInfo.Text = "Gra: KONTROLA";
-                resultInfo.Text = "TEST DLL W WOW: NIEPRZETESTOWANE";
+                resultInfo.Text = "TEST DLL W WOW: NIEPRZETESTOWANE"; dllState = "NIEPRZETESTOWANE";
                 if (!VerifyExe() || !VerifyDlls()) {
                     gameInfo.Text = "Gra: FAIL kontroli plikow"; resultInfo.Text = "FAIL: weryfikacja plikow";
                     return;
@@ -268,21 +269,43 @@ namespace FrostmourneGui {
                     FileName = verifiedExe, WorkingDirectory = System.IO.Path.GetDirectoryName(verifiedExe),
                     UseShellExecute = false
                 };
-                Write("ETAP mechanizm_rozszerzen=BRAK: nie potwierdzono obslugi zewnetrznych natywnych DLL przez wybrany klient; bez iniekcji/proxy/hijackingu.");
-                Write("CreateProcess: start Wow.exe; DLL nie bedzie ladowana.");
+                Write("CreateProcess: start Wow.exe; po weryfikacji PID jeden kontrolowany test natywnego ladowania bootstrap.");
                 game = Process.Start(start);
                 if (game == null) throw new InvalidOperationException("CreateProcess nie zwrocil procesu");
                 pidInfo.Text = "PID: " + game.Id;
                 gameInfo.Text = "Gra: URUCHOMIONA (supervisor)";
-                resultInfo.Text = "MECHANIZM DLL: BRAK | DLL W WOW: NIEPRZETESTOWANE";
+                resultInfo.Text = "DLL W WOW: PROBA JEDNORAZOWA";
                 Write("ETAP weryfikacja_klienta=PASS build=12340 sha256=" + verifiedHash + " pid=" + game.Id);
                 Write("ETAP weryfikacja_DLL=" + (selected.Exists(m => m.Enabled) ? "PASS dyskowy_pin_sha256=" + pinnedHash : "POMINIETA wszystkie_DLL_wylaczone") + " pid=" + game.Id);
                 Write("ETAP uruchomienie_gry=PASS pid=" + game.Id);
-                Write("ETAP mechanizm_rozszerzen=BRAK pid=" + game.Id);
-                Write("ETAP zaladowanie_DLL=NIEPRZETESTOWANE pid=" + game.Id + " win32=NIE_DOTYCZY");
-                Write("ETAP inicjalizacja_ABI=NIEPRZETESTOWANE pid=" + game.Id + " win32=NIE_DOTYCZY");
-                Write("ETAP potwierdzenie_PID_wewnatrz_DLL=NIEPRZETESTOWANE pid=" + game.Id + " win32=NIE_DOTYCZY");
-                Write("PASS uruchomienie procesu PID=" + game.Id + "; DLL in-process=NIEPRZETESTOWANE ABI=NIEPRZETESTOWANE");
+                Write("ETAP mechanizm_rozszerzen=STANDARDOWE_WIN32_LOADLIBRARY pid=" + game.Id);
+                Module bootstrap = selected.Find(m => m.Enabled);
+                if (bootstrap == null) {
+                    resultInfo.Text = "DLL: WYLACZONA; GRA URUCHOMIONA";
+                    Write("ETAP zaladowanie_DLL=NIEPRZETESTOWANE przyczyna=wylaczona pid=" + game.Id);
+                } else {
+                    try {
+                        // The only enabled module may be the package-pinned bootstrap (VerifyDlls).
+                        if (Verify.Hash(bootstrap.Path) != pinnedHash ||
+                            Verify.Hash(verifiedExe) != verifiedHash)
+                            throw new InvalidDataException("Plik zmienil sie pomiedzy weryfikacja a probą ladowania");
+                        string outcome = RemoteBootstrap.LoadAndInitialize(game, verifiedExe, bootstrap.Path, Write);
+                        dllState = "PASS";
+                        bootstrap.Status = "PASS: zaladowana i zainicjalizowana w PID " + game.Id;
+                        resultInfo.Text = outcome;
+                        dllInfo.Text = "DLL w procesie Wow.exe: PASS | PID=" + game.Id + " | ABI=1.0";
+                        Write("ETAP test_inprocess=PASS pid=" + game.Id + " sha256=" + bootstrap.Hash);
+                    } catch (Exception ex) {
+                        dllState = "FAIL";
+                        bootstrap.Status = "FAIL in-process: " + ex.Message;
+                        resultInfo.Text = "DLL W WOW: FAIL (gra pozostaje uruchomiona)";
+                        dllInfo.Text = "DLL w procesie Wow.exe: FAIL / sprawdz log";
+                        Win32Exception win = ex as Win32Exception;
+                        Write("ETAP test_inprocess=FAIL pid=" + game.Id +
+                              " win32=" + (win == null ? "NIE_DOTYCZY" : win.NativeErrorCode.ToString()) +
+                              " message=" + ex);
+                    } finally { RefreshModules(); }
+                }
             } catch(Win32Exception ex) {
                 gameInfo.Text = "Gra: FAIL CreateProcess Win32=" + ex.NativeErrorCode;
                 Write("FAIL CreateProcess: Win32=" + ex.NativeErrorCode + " message=" + ex.Message);
@@ -296,7 +319,7 @@ namespace FrostmourneGui {
             try {
                 if (game.HasExited) {
                     gameInfo.Text = "Gra: ZAKONCZONA, exit=" + game.ExitCode;
-                    Write("EXIT PID=" + game.Id + " code=" + game.ExitCode + "; DLL nadal NIEPRZETESTOWANE");
+                    Write("EXIT PID=" + game.Id + " code=" + game.ExitCode + "; test DLL=" + dllState);
                     game.Dispose(); game = null; pidInfo.Text = "PID: --";
                 }
             } catch(Exception ex) { Write("FAIL odczytu statusu procesu: " + ex.Message); game = null; }
