@@ -107,9 +107,9 @@ namespace FrostmourneGui {
             exe.Location = new Point(24, 94); exe.Size = new Size(782, 26); exe.ReadOnly = true;
             exe.BackColor = Color.FromArgb(34,42,56); exe.ForeColor = Color.White; Controls.Add(exe);
             Button("Wybierz Wow.exe", 816, 92, 205, 30, (s,e) => PickExe());
-            Place(clientInfo, clientInfo, "Fingerprint: NIEZWERYFIKOWANY", 24, 129, 995, 24);
-            Place(gameInfo, gameInfo, "Gra: NIEURUCHOMIONA", 24, 157, 650, 24);
-            Place(pidInfo, pidInfo, "PID: --", 700, 157, 315, 24);
+            Place(clientInfo, "Fingerprint: NIEZWERYFIKOWANY", 24, 129, 995, 24);
+            Place(gameInfo, "Gra: NIEURUCHOMIONA", 24, 157, 650, 24);
+            Place(pidInfo, "PID: --", 700, 157, 315, 24);
             Label("BIBLIOTEKI DLL", 24, 199, 750, 26, 12);
             Button("Dodaj DLL", 744, 195, 132, 30, (s,e) => PickDll());
             Button("Usun zaznaczony", 884, 195, 137, 30, (s,e) => RemoveDll());
@@ -127,9 +127,9 @@ namespace FrostmourneGui {
                 }
             };
             Controls.Add(modules);
-            Place(dllInfo, dllInfo, "DLL w procesie gry: NIEPRZETESTOWANE", 24, 425, 995, 26);
+            Place(dllInfo, "DLL w procesie gry: NIEPRZETESTOWANE", 24, 425, 995, 26);
             Button("URUCHOM WOW", 24, 460, 997, 52, (s,e) => Launch());
-            Place(resultInfo, resultInfo, "TEST DLL W WOW: NIEPRZETESTOWANE", 24, 521, 995, 28);
+            Place(resultInfo, "TEST DLL W WOW: NIEPRZETESTOWANE", 24, 521, 995, 28);
             resultInfo.Font = new Font("Segoe UI", 12, FontStyle.Bold);
             Label("DIAGNOSTYKA  /  logi i bledy procesu", 24, 557, 650, 25, 12);
             Button("Otworz katalog logow", 801, 554, 220, 30, (s,e) => {
