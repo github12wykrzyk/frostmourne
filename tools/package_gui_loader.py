@@ -51,6 +51,7 @@ def main() -> int:
         finally:
             pe.close()
         pin = f"{dll_info['sha256']} {dll_info['size_bytes']}\n".encode("ascii")
+        (DIST / "bootstrap.sha256").write_bytes(pin)
         readme = (ROOT / "docs/GUI_LOADER_TEST.md").read_bytes()
         files = {dll.name: dll_info, exe.name: exe_info,
                  "bootstrap.sha256": {"sha256": sha(pin), "size_bytes": len(pin)},
