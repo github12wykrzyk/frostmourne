@@ -3,7 +3,8 @@ from manifest_common import ROOT, load_json, repo_path
 
 REQUIRED = [
     "AGENTS.md","AI_START_HERE.md","AI_INDEX.json","CURRENT.json","runtime/current.json",
-    "reference/client/reference.json","reference/client/README.md",
+    "reference/client/reference.json","reference/client/README.md","reference/client/pe_audit.json",
+    "docs/CLIENT_PE_AUDIT.md","docs/LOADER_UPDATER_ARCHITECTURE.md","tools/audit_reference_client.py",
     "tools/verify_repo.py","tools/verify_current.py","tools/verify_reference_client.py","tools/make_runtime_package.py",
     "docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md",".github/workflows/verify.yml"
 ]
@@ -37,6 +38,21 @@ def main():
         errors.append("registered client size does not match audited target")
     if client.get("pe_machine") != "0x014c":
         errors.append("registered client PE machine must be I386 0x014c")
+    try:
+        pe_report = load_json(ROOT / "reference/client/pe_audit.json")
+        if pe_report.get("schema_version") != 1:
+            errors.append("reference PE audit: unsupported schema_version")
+        if pe_report.get("audited_path") != client.get("repository_path"):
+            errors.append("reference PE audit path differs from registered client")
+        if pe_report.get("sha256") != client.get("sha256") or pe_report.get("size_bytes") != client.get("size_bytes"):
+            errors.append("reference PE audit fingerprint differs from registered client")
+        if pe_report.get("coff", {}).get("machine") != "0x0000014c":
+            errors.append("reference PE audit machine is not I386")
+        versions = pe_report.get("version_resource", {}).get("fixed", [])
+        if not any(v.get("file_version") == "3.3.5.12340" for v in versions):
+            errors.append("reference PE audit has no 3.3.5.12340 fixed version resource")
+    except Exception as e:
+        errors.append(f"reference PE audit cannot be read: {e}")
     if cur.get("runtime_manifest") != "runtime/current.json":
         errors.append("CURRENT.json must point to runtime/current.json")
     baseline_path = cur.get("baseline_manifest")
