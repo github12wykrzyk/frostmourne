@@ -47,9 +47,9 @@ jobs:
       - name: Compile WinForms GUI x86 release and debug
         shell: cmd
         run: |
-          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /optimize+ /out:dist\FrostmourneGui.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs
+          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /optimize+ /out:dist\FrostmourneGui.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs
           if errorlevel 1 exit /b 1
-          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /debug:full /define:DEBUG /out:dist\FrostmourneGuiDebug.exe /pdb:dist\FrostmourneGuiDebug.pdb /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs
+          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /debug:full /define:DEBUG /out:dist\FrostmourneGuiDebug.exe /pdb:dist\FrostmourneGuiDebug.pdb /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs
           if errorlevel 1 exit /b 1
       - name: Audit PE32, ABI, dependencies and immutable ZIP contents
         shell: cmd
