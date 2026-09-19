@@ -2,7 +2,6 @@
 from __future__ import annotations
 import hashlib
 import json
-import struct
 import sys
 import zipfile
 from pathlib import Path
@@ -32,10 +31,10 @@ def audit(path: Path, dll: bool) -> dict:
         if any(dep.startswith(("vcruntime", "msvcp", "msvcr", "ucrtbase")) for dep in imports):
             raise ValueError(f"{path.name}: unexpected external MSVC runtime dependency: {imports}")
         if dll:
+            exports = getattr(pe, "DIRECTORY_ENTRY_EXPORT", None)
             names = {
                 sym.name.decode("ascii", "strict")
-                for entry in getattr(pe, "DIRECTORY_ENTRY_EXPORT", [])
-                for sym in entry.symbols if sym.name
+                for sym in (exports.symbols if exports is not None else []) if sym.name
             }
             expected = {
                 "_Frostmourne_Initialize@4",
