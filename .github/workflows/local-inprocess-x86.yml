@@ -1,0 +1,65 @@
+name: local-inprocess-x86-diagnostic
+
+on:
+  push:
+    branches: [work]
+    paths:
+      - 'src/bootstrap/**'
+      - 'tools/write_local_loader_hash.py'
+      - 'tools/package_local_inprocess.py'
+      - 'docs/LOCAL_INPROCESS_TEST.md'
+      - '.github/workflows/local-inprocess-x86.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-diagnostic-windows-x86:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate reference Wow.exe and runtime/repository manifests
+        shell: cmd
+        run: |
+          python tools/verify_reference_client.py
+          if errorlevel 1 exit /b 1
+          python tools/verify_current.py
+          if errorlevel 1 exit /b 1
+          python tools/verify_repo.py
+          if errorlevel 1 exit /b 1
+      - name: Compile exact x86 bootstrap and pin its SHA256
+        shell: cmd
+        run: |
+          for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set VSINSTALL=%%i
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x86 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          if not exist dist mkdir dist
+          cl /nologo /W4 /WX /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c /link /INCREMENTAL:NO
+          if errorlevel 1 exit /b 1
+          python tools/write_local_loader_hash.py
+          if errorlevel 1 exit /b 1
+          cl /nologo /W4 /MT /DUNICODE /D_UNICODE /I dist /Fe:dist\FrostmourneLocalLoad.exe src\bootstrap\local_process_loader.c /link /SUBSYSTEM:WINDOWS /INCREMENTAL:NO
+          if errorlevel 1 exit /b 1
+      - name: Exercise no-game branch only (CI cannot test game process)
+        shell: cmd
+        run: |
+          dist\FrostmourneLocalLoad.exe
+          if errorlevel 1 exit /b 1
+      - name: Validate PE32, x86 imports/exports, SHA256 and complete ZIP
+        shell: cmd
+        run: |
+          python -m pip install pefile==2024.8.26
+          if errorlevel 1 exit /b 1
+          python tools/package_local_inprocess.py
+          if errorlevel 1 exit /b 1
+      - name: Upload local isolated in-process diagnostic package
+        uses: actions/upload-artifact@v4
+        with:
+          name: frostmourne-local-inprocess-x86
+          path: dist/frostmourne-local-inprocess-x86.zip
+          if-no-files-found: error
