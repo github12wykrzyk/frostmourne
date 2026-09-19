@@ -19,6 +19,11 @@ jobs:
           python-version: '3.12'
       - name: Verify repository
         run: python tools/verify_repo.py
+      - name: Verify registered target-client metadata
+        run: python tools/verify_reference_client.py --metadata-only
+      - name: Verify registered target-client binary when present
+        if: ${{ hashFiles('reference/client/Wow.exe') != '' }}
+        run: python tools/verify_reference_client.py
       - name: Verify active runtime
         run: python tools/verify_current.py
       - name: Unit tests
@@ -37,10 +42,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Verify manifests on Windows
+      - name: Verify manifests and target-client metadata on Windows
         run: |
           python tools/verify_repo.py
+          python tools/verify_reference_client.py --metadata-only
           python tools/verify_current.py
+      - name: Verify registered target-client binary when present
+        if: ${{ hashFiles('reference/client/Wow.exe') != '' }}
+        run: python tools/verify_reference_client.py
       - name: Compile CI-only x86 smoke PE
         shell: cmd
         run: |
