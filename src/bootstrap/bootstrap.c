@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
+#include <wchar.h>
 #include "bootstrap.h"
 
 #define FM_VERSION L"0.1.0-test1"
@@ -30,17 +31,17 @@ static DWORD write_diagnostic(DWORD elapsed_ms) {
     if (!n || n >= MAX_PATH) return ERROR_PATH_NOT_FOUND;
     if (lstrlenW(dir) > MAX_PATH - 80) return ERROR_BUFFER_OVERFLOW;
     base = dir + lstrlenW(dir);
-    wsprintfW(base, L"\\Frostmourne");
+    if (wcscpy_s(base, MAX_PATH - (size_t)(base - dir), L"\\Frostmourne")) return ERROR_BUFFER_OVERFLOW;
     if (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return GetLastError();
-    wsprintfW(sub, L"%s\\logs", dir);
+    if (swprintf_s(sub, MAX_PATH, L"%ls\\logs", dir) < 0) return ERROR_BUFFER_OVERFLOW;
     if (!CreateDirectoryW(sub, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return GetLastError();
-    wsprintfW(file, L"%s\\bootstrap-%lu.log", sub, (unsigned long)g_pid);
+    if (swprintf_s(file, MAX_PATH, L"%ls\\bootstrap-%lu.log", sub, (unsigned long)g_pid) < 0) return ERROR_BUFFER_OVERFLOW;
     GetSystemTime(&now);
     wsprintfW(line, L"%04u-%02u-%02uT%02u:%02u:%02uZ event=INITIALIZED module=FrostmourneBootstrap version=%s abi=%lu.%lu pid=%lu attach_filetime=%08lx%08lx initialization_ms=%lu\r\n",
         now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, FM_VERSION,
         (unsigned long)FM_ABI_MAJOR, (unsigned long)FM_ABI_MINOR, (unsigned long)g_pid,
         (unsigned long)g_attached_at.dwHighDateTime, (unsigned long)g_attached_at.dwLowDateTime,
-        (unsigned long)elapsed_ms);
+        (unsigned long)elapsed_ms) < 0) return ERROR_BUFFER_OVERFLOW;
     out = CreateFileW(file, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (out == INVALID_HANDLE_VALUE) return GetLastError();
     /* ASCII diagnostic text encoded as UTF-16LE, without an implicit BOM. */
