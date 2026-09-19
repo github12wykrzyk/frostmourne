@@ -33,12 +33,15 @@ def main() -> int:
         header = (DIST / "frostmourne_loader_hash.h").read_text(encoding="ascii")
         if files[DLL.name]["sha256"] not in header or str(files[DLL.name]["size_bytes"]) not in header:
             raise ValueError("loader compile-time DLL pin does not match compiled DLL")
-        with PE(str(EXE)) as pe:
+        pe = PE(str(EXE))
+        try:
             imports = {e.name.decode("ascii", "ignore") for d in pe.DIRECTORY_ENTRY_IMPORT
                        for e in d.imports if e.name}
             if not {"OpenProcess", "CreateRemoteThread", "WriteProcessMemory",
                     "ReadProcessMemory", "VirtualAllocEx"}.issubset(imports):
                 raise ValueError("loader missing required in-process test APIs")
+        finally:
+            pe.close()
         manifest = {
             "schema_version": 1,
             "test_kind": "experimental-one-shot-isolated-local-wow-inprocess",
