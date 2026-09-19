@@ -37,7 +37,7 @@ static DWORD write_diagnostic(DWORD elapsed_ms) {
     if (!CreateDirectoryW(sub, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return GetLastError();
     if (swprintf_s(file, MAX_PATH, L"%ls\\bootstrap-%lu.log", sub, (unsigned long)g_pid) < 0) return ERROR_BUFFER_OVERFLOW;
     GetSystemTime(&now);
-    wsprintfW(line, L"%04u-%02u-%02uT%02u:%02u:%02uZ event=INITIALIZED module=FrostmourneBootstrap version=%s abi=%lu.%lu pid=%lu attach_filetime=%08lx%08lx initialization_ms=%lu\r\n",
+    if (swprintf_s(line, sizeof(line)/sizeof(line[0]), L"%04u-%02u-%02uT%02u:%02u:%02uZ event=INITIALIZED module=FrostmourneBootstrap version=%ls abi=%lu.%lu pid=%lu attach_filetime=%08lx%08lx initialization_ms=%lu\r\n",
         now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, FM_VERSION,
         (unsigned long)FM_ABI_MAJOR, (unsigned long)FM_ABI_MINOR, (unsigned long)g_pid,
         (unsigned long)g_attached_at.dwHighDateTime, (unsigned long)g_attached_at.dwLowDateTime,
