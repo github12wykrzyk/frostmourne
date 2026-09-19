@@ -1,0 +1,64 @@
+name: verify
+
+on:
+  push:
+    branches: [main, work]
+  pull_request:
+    branches: [main, work]
+
+permissions:
+  contents: read
+
+jobs:
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify repository
+        run: python tools/verify_repo.py
+      - name: Verify active runtime
+        run: python tools/verify_current.py
+      - name: Unit tests
+        run: python -m pytest -q
+      - name: Rebuild deterministic runtime package
+        run: python tools/make_runtime_package.py --output dist/frostmourne-runtime.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-manifest-package
+          path: dist/frostmourne-runtime.zip
+
+  windows-x86-toolchain:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify manifests on Windows
+        run: |
+          python tools/verify_repo.py
+          python tools/verify_current.py
+      - name: Compile CI-only x86 smoke PE
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars32.bat"
+          if errorlevel 1 call "%ProgramFiles%\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars32.bat"
+          if errorlevel 1 call "%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars32.bat"
+          if errorlevel 1 exit /b 1
+          cl /nologo /W4 /WX /Fe:tests\x86_smoke.exe tests\x86_smoke.c
+          tests\x86_smoke.exe
+      - name: Check PE machine is x86
+        shell: python
+        run: |
+          import struct
+          p='tests/x86_smoke.exe'
+          with open(p,'rb') as f:
+              assert f.read(2)==b'MZ'
+              f.seek(0x3c); off=struct.unpack('<I',f.read(4))[0]
+              f.seek(off); assert f.read(4)==b'PE\0\0'
+              machine=struct.unpack('<H',f.read(2))[0]
+          assert machine==0x014c, hex(machine)
+          print('x86 PE smoke: PASS')
