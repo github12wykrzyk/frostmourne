@@ -1,14 +1,34 @@
 # Development workflow
 
-User request → inspect current manifests/index → change `work` → verify → build Windows x86 → package ZIP → user tests exact artifact → acceptance → promote exact verified commit to `main` → stable baseline metadata.
+User request → inspect current manifests/index → verify registered target client when client-dependent → change `work` → verify → build Windows x86 → package ZIP → user tests exact artifact → acceptance → promote exact verified commit to `main` → stable baseline metadata.
 
 ## Branches
 `work` is development. `main` contains only accepted stable states. A test build is identified by exact commit SHA; a stable version is created only after acceptance.
 
+## Registered target client
+The audited Whitemane FrostmourneRebuffed executable is registered in `reference/client/reference.json`.
+
+Expected fingerprint:
+- `Wow.exe`
+- SHA256 `edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd`
+- 7,704,216 bytes
+- PE I386 / x86
+- file version resource `3, 3, 5, 12340`
+
+Before deriving offsets, hooks, structures or binary patches, run:
+
+```bash
+python tools/verify_reference_client.py --path <path-to-Wow.exe>
+```
+
+A different hash is a different client until audited. Never silently reuse offsets from another WoW build.
+
 ## CI
-`.github/workflows/verify.yml` runs repository/runtime verification on pushes and pull requests to `work` or `main`. A Windows job initializes the MSVC x86 environment and compiles `tests/x86_smoke.c` as a CI-only executable. It proves x86 compilation without pretending to be a game module.
+`.github/workflows/verify.yml` runs repository/runtime verification on pushes and pull requests to `work` or `main`. It always validates the registered client metadata. If `reference/client/Wow.exe` exists in the checkout, CI also verifies its exact bytes, x86 PE machine and build markers.
+
+A Windows job initializes the MSVC x86 environment and compiles `tests/x86_smoke.c` as a CI-only executable. It proves x86 compilation without pretending to be a game module.
 
 When real components are added, their build commands must be included in the Windows job and their outputs must pass `tools/verify_current.py` before packaging.
 
 ## First real module
-Create `src/<component>/`, add build metadata, build x86 DLL/EXE, then add one runtime manifest entry with path, SHA256, version, x86 architecture, canonical source and dependencies. Update `AI_INDEX.json`, run both verifiers, package, and test. Do not create a stable baseline until user acceptance.
+Verify the target client first. Create `src/<component>/`, add build metadata, build x86 DLL/EXE, then add one runtime manifest entry with path, SHA256, version, x86 architecture, canonical source and dependencies. Update `AI_INDEX.json`, run both runtime/repository verifiers plus the target-client verifier, package, and test. Do not create a stable baseline until user acceptance.
