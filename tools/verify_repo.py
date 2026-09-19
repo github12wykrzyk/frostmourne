@@ -6,7 +6,9 @@ REQUIRED = [
     "reference/client/reference.json","reference/client/README.md","reference/client/pe_audit.json",
     "docs/CLIENT_PE_AUDIT.md","docs/LOADER_UPDATER_ARCHITECTURE.md","tools/audit_reference_client.py",
     "tools/verify_repo.py","tools/verify_current.py","tools/verify_reference_client.py","tools/make_runtime_package.py",
-    "docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md",".github/workflows/verify.yml"
+    "docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md","docs/UPDATER.md",
+    "src/updater/core.py","src/updater/app.py","src/updater/launcher.py","updates/work.json",
+    ".github/workflows/verify.yml"
 ]
 
 def main():
@@ -19,12 +21,17 @@ def main():
         cur = load_json(ROOT / "CURRENT.json")
         runtime = load_json(ROOT / "runtime/current.json")
         client = load_json(ROOT / "reference/client/reference.json")
+        updater_release = load_json(ROOT / "updates/work.json")
     except Exception as e:
         print(f"REPOSITORY VERIFICATION: FAIL\n - JSON load failed: {e}")
         return 1
     for name, obj in [("AI_INDEX.json", idx), ("CURRENT.json", cur), ("runtime/current.json", runtime), ("reference/client/reference.json", client)]:
         if obj.get("schema_version") != 1:
             errors.append(f"{name}: unsupported schema_version")
+    if updater_release.get("schema_version") != 1 or updater_release.get("target_client_sha256") != client.get("sha256"):
+        errors.append("updater release schema/client fingerprint mismatch")
+    if updater_release.get("files") is None or not isinstance(updater_release.get("files"), list):
+        errors.append("updater release files must be an array")
     target = runtime.get("target", {})
     expected = {"product":"World of Warcraft","version":"3.3.5a","build":12340,"platform":"Windows","architecture":"x86"}
     if target != expected:
