@@ -107,9 +107,9 @@ namespace FrostmourneGui {
             exe.Location = new Point(24, 94); exe.Size = new Size(782, 26); exe.ReadOnly = true;
             exe.BackColor = Color.FromArgb(34,42,56); exe.ForeColor = Color.White; Controls.Add(exe);
             Button("Wybierz Wow.exe", 816, 92, 205, 30, (s,e) => PickExe());
-            clientInfo = Place(clientInfo, "Fingerprint: NIEZWERYFIKOWANY", 24, 129, 995, 24);
-            gameInfo = Place(gameInfo, "Gra: NIEURUCHOMIONA", 24, 157, 650, 24);
-            pidInfo = Place(pidInfo, "PID: --", 700, 157, 315, 24);
+            Place(clientInfo, clientInfo, "Fingerprint: NIEZWERYFIKOWANY", 24, 129, 995, 24);
+            Place(gameInfo, gameInfo, "Gra: NIEURUCHOMIONA", 24, 157, 650, 24);
+            Place(pidInfo, pidInfo, "PID: --", 700, 157, 315, 24);
             Label("BIBLIOTEKI DLL", 24, 199, 750, 26, 12);
             Button("Dodaj DLL", 744, 195, 132, 30, (s,e) => PickDll());
             Button("Usun zaznaczony", 884, 195, 137, 30, (s,e) => RemoveDll());
@@ -127,9 +127,9 @@ namespace FrostmourneGui {
                 }
             };
             Controls.Add(modules);
-            dllInfo = Place(dllInfo, "DLL w procesie gry: NIEPRZETESTOWANE", 24, 425, 995, 26);
+            Place(dllInfo, dllInfo, "DLL w procesie gry: NIEPRZETESTOWANE", 24, 425, 995, 26);
             Button("URUCHOM WOW", 24, 460, 997, 52, (s,e) => Launch());
-            resultInfo = Place(resultInfo, "TEST DLL W WOW: NIEPRZETESTOWANE", 24, 521, 995, 28);
+            Place(resultInfo, resultInfo, "TEST DLL W WOW: NIEPRZETESTOWANE", 24, 521, 995, 28);
             resultInfo.Font = new Font("Segoe UI", 12, FontStyle.Bold);
             Label("DIAGNOSTYKA  /  logi i bledy procesu", 24, 557, 650, 25, 12);
             Button("Otworz katalog logow", 801, 554, 220, 30, (s,e) => {
@@ -203,7 +203,7 @@ namespace FrostmourneGui {
                 string h = Verify.Hash(path);
                 if (h != Verify.ReferenceSha) throw new InvalidDataException("Niezgodny SHA256 klienta: " + h);
                 string v = FileVersionInfo.GetVersionInfo(path).FileVersion ?? "?";
-                if (v.Replace(" ", "") != "3.3.5.12340")
+                if (v.Replace(", ", ".").Replace(",", ".").Replace(" ", "") != "3.3.5.12340")
                     throw new InvalidDataException("Niepoprawna wersja klienta: " + v);
                 verifiedExe = path; verifiedHash = h;
                 clientInfo.Text = "PASS  |  WoW 3.3.5a / 12340  |  PE32 x86  |  SHA256 " + h;
