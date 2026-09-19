@@ -79,7 +79,7 @@ def within_install(root, rel):
     current = root
     for part in p.parts:
         current = current / part
-        if current.is_symlink():
+        if current.is_symlink() or (hasattr(current, "is_junction") and current.is_junction()):
             raise UpdateError("Ścieżka prowadzi przez dowiązanie symboliczne.")
     candidate = root.joinpath(*p.parts)
     if not candidate.resolve(strict=False).is_relative_to(root):
@@ -255,6 +255,14 @@ def game_running(install):
         count = wintypes.DWORD()
         if not psapi.EnumProcesses(ctypes.byref(pids), ctypes.sizeof(pids), ctypes.byref(count)):
             raise OSError("EnumProcesses")
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+        kernel.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        psapi.EnumProcesses.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+        psapi.EnumProcesses.restype = wintypes.BOOL
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         for pid in pids[:count.value // ctypes.sizeof(wintypes.DWORD)]:
             if not pid:
@@ -289,7 +297,7 @@ class Updater:
         if not self.root.is_dir():
             raise UpdateError("Nie znaleziono katalogu gry.")
         self.state = self.root / MANAGED
-        if self.state.is_symlink():
+        if self.state.is_symlink() or (hasattr(self.state, "is_junction") and self.state.is_junction()):
             raise UpdateError("Katalog aktualizacji jest dowiązaniem.")
         self.journal = self.state / "journal.json"
         self.installed = self.state / "installed.json"
