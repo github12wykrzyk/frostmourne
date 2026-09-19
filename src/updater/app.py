@@ -203,6 +203,8 @@ class App:
 
     def _launch(self):
         try:
+            if self.busy:
+                raise UpdateError("Zakończ aktualną operację przed uruchomieniem gry.")
             updater = Updater(self.install.get())
             if updater.recover():
                 self._write("Odzyskano przerwaną aktualizację.")
