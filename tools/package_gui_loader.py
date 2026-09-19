@@ -1,4 +1,4 @@
-"""Build-time validation and exact ZIP for the non-injecting Windows x86 GUI supervisor."""
+"""Build-time validation and exact ZIP for the experimental Windows x86 in-process loader."""
 from __future__ import annotations
 import hashlib
 import json
@@ -47,10 +47,15 @@ def main() -> int:
         source = (ROOT / "src/loader/Program.cs").read_text(encoding="utf-8")
         if "Verify.ReferenceSha" not in source or "Process.Start(start)" not in source:
             raise ValueError("GUI source has no exact client gate or launch path")
-        disallowed = ("CreateRemoteThread", "WriteProcessMemory", "VirtualAllocEx",
-                      "SetWindowsHookEx", "NtCreateThreadEx", "LoadLibraryW", "OpenProcess(")
-        if any(name in source for name in disallowed):
-            raise ValueError("GUI contains disallowed process-loading API")
+        remote = (ROOT / "src/loader/RemoteBootstrap.cs").read_text(encoding="utf-8")
+        expected = ("CreateRemoteThread", "WriteProcessMemory", "VirtualAllocEx",
+                    "LoadLibraryW", "Frostmourne_Initialize", "Frostmourne_GetAbi",
+                    "GetExitCodeThread", "observed_pid")
+        if not all(name in remote for name in expected):
+            raise ValueError("GUI missing required explicit in-process loading/ABI diagnostics")
+        disallowed = ("SetWindowsHookEx", "NtCreateThreadEx", "PROCESS_ALL_ACCESS")
+        if any(name in source + remote for name in disallowed):
+            raise ValueError("GUI contains unauthorized or overbroad process APIs")
 
         dll = DIST / "FrostmourneBootstrap.dll"
         debug_dll = DIST / "FrostmourneBootstrapDebug.dll"
@@ -90,11 +95,11 @@ def main() -> int:
                 files[optional] = {"sha256": sha(data), "size_bytes": len(data)}
         manifest = {
             "schema_version": 1,
-            "test_kind": "gui-launch-without-injection",
+            "test_kind": "gui-one-shot-inprocess-bootstrap-attempt",
             "client_sha256": REF,
             "process_launch": "Process.Start -> CreateProcess",
-            "inprocess_dll_loading": "NOT_AVAILABLE_NO_VERIFIED_EXTENSION_MECHANISM",
-            "abi_initialization_in_wow": "NOT_TESTED",
+            "inprocess_dll_loading": "IMPLEMENTED_STANDARD_WIN32_NOT_TESTED_ON_GAME_IN_CI",
+            "abi_initialization_in_wow": "NOT_TESTED_ON_GAME_IN_CI",
             "active_runtime": False,
             "files": files,
         }
