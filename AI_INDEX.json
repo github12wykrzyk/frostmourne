@@ -26,6 +26,15 @@
       "status": "experimental",
       "distribution": "GitHub Actions artifact frostmourne-updater-win-x86",
       "release_manifest": "updates/work.json"
+    },
+    {
+      "id": "gui-loader",
+      "source": "src/loader",
+      "docs": "docs/GUI_LOADER_TEST.md",
+      "platform": "Windows x86",
+      "status": "experimental",
+      "distribution": "GitHub Actions artifact frostmourne-gui-loader-x86",
+      "active_runtime": false
     }
   ],
   "tools": [
@@ -53,6 +62,11 @@
       "id": "audit_reference_client",
       "path": "tools/audit_reference_client.py",
       "purpose": "Read-only fingerprint-gated PE audit; compare against committed measured report."
+    },
+    {
+      "id": "package_gui_loader",
+      "path": "tools/package_gui_loader.py",
+      "purpose": "Verify native x86 bootstrap ABI, managed x86 GUI, SHA256 pin and isolated GUI loader ZIP."
     }
   ],
   "docs": [
@@ -63,6 +77,7 @@
     "docs/CLIENT_PE_AUDIT.md",
     "docs/LOADER_UPDATER_ARCHITECTURE.md",
     "reference/client/pe_audit.json",
-    "docs/UPDATER.md"
+    "docs/UPDATER.md",
+    "docs/GUI_LOADER_TEST.md"
   ]
 }
