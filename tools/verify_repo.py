@@ -3,7 +3,8 @@ from manifest_common import ROOT, load_json, repo_path
 
 REQUIRED = [
     "AGENTS.md","AI_START_HERE.md","AI_INDEX.json","CURRENT.json","runtime/current.json",
-    "tools/verify_repo.py","tools/verify_current.py","tools/make_runtime_package.py",
+    "reference/client/reference.json","reference/client/README.md",
+    "tools/verify_repo.py","tools/verify_current.py","tools/verify_reference_client.py","tools/make_runtime_package.py",
     "docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md",".github/workflows/verify.yml"
 ]
 
@@ -16,16 +17,26 @@ def main():
         idx = load_json(ROOT / "AI_INDEX.json")
         cur = load_json(ROOT / "CURRENT.json")
         runtime = load_json(ROOT / "runtime/current.json")
+        client = load_json(ROOT / "reference/client/reference.json")
     except Exception as e:
         print(f"REPOSITORY VERIFICATION: FAIL\n - JSON load failed: {e}")
         return 1
-    for name, obj in [("AI_INDEX.json", idx), ("CURRENT.json", cur), ("runtime/current.json", runtime)]:
+    for name, obj in [("AI_INDEX.json", idx), ("CURRENT.json", cur), ("runtime/current.json", runtime), ("reference/client/reference.json", client)]:
         if obj.get("schema_version") != 1:
             errors.append(f"{name}: unsupported schema_version")
     target = runtime.get("target", {})
     expected = {"product":"World of Warcraft","version":"3.3.5a","build":12340,"platform":"Windows","architecture":"x86"}
     if target != expected:
         errors.append("runtime target must exactly match WoW 3.3.5a build 12340 Windows x86")
+    client_target = {k: client.get(k) for k in ("product","version","build","platform","architecture")}
+    if client_target != expected:
+        errors.append("registered client target must exactly match WoW 3.3.5a build 12340 Windows x86")
+    if client.get("sha256") != "edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd":
+        errors.append("registered client SHA256 does not match audited target")
+    if client.get("size_bytes") != 7704216:
+        errors.append("registered client size does not match audited target")
+    if client.get("pe_machine") != "0x014c":
+        errors.append("registered client PE machine must be I386 0x014c")
     if cur.get("runtime_manifest") != "runtime/current.json":
         errors.append("CURRENT.json must point to runtime/current.json")
     baseline_path = cur.get("baseline_manifest")
@@ -62,6 +73,7 @@ def main():
         return 1
     print("REPOSITORY VERIFICATION: PASS")
     print(f" baseline={cur['baseline_id']} modules={len(idx.get('modules', []))} runtime_files={len(runtime.get('files', []))}")
+    print(f" client_sha256={client['sha256']} client_build={client['build']}")
     return 0
 
 if __name__ == "__main__":
