@@ -23,6 +23,15 @@ jobs:
         run: python tools/verify_reference_client.py
       - name: Verify active runtime
         run: python tools/verify_current.py
+      - name: Install pinned PE audit dependency
+        run: python -m pip install pefile==2024.8.26
+      - name: Audit exact reference-client PE
+        run: python tools/audit_reference_client.py --output dist/reference-client-pe-audit.json
+      - name: Upload PE audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-client-pe-audit
+          path: dist/reference-client-pe-audit.json
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Rebuild deterministic runtime package
