@@ -1,6 +1,6 @@
 # FROSTMOURNE — GUI launcher + test DLL (experimental work branch)
 
-This package contains an independent x86 Windows GUI, a prebuilt x86 FrostmourneBootstrap.dll, its build-time SHA256/size pin, and a package manifest. It does NOT include Wow.exe or the previous FrostmourneLocalLoad.exe. It does not modify any game files.
+This package contains an independent x86 Windows GUI, a prebuilt x86 FrostmourneBootstrap.dll, dedicated debug builds (FrostmourneGuiDebug.exe and FrostmourneBootstrapDebug.dll with symbols), its build-time SHA256/size pin, and a package manifest. It does NOT include Wow.exe or the previous FrostmourneLocalLoad.exe. It does not modify any game files.
 
 ## Scope and strict result interpretation
 
@@ -23,3 +23,4 @@ Close the GUI normally; doing so does not terminate the game. No DLL load retrie
 ## CI / verification boundary
 
 CI checks reference client fingerprint, active runtime manifest and repo, compiles the pre-existing diagnostic DLL with MSVC x86 and the WinForms GUI for x86, validates exact PE32 architecture/ABI exports/linked imports, writes SHA256 pin, verifies ZIP content and exercises the no-game self-test. CI does NOT launch Wow.exe or claim in-process initialization. The experiment is excluded from active runtime and main until the user accepts it.
+\n## Debug binaries\n\nThe ZIP also contains `FrostmourneGuiDebug.exe` and `FrostmourneBootstrapDebug.dll` compiled as x86 with debug symbols. The debug DLL preserves the same ABI and minimal DllMain; its initialization log marks `build=debug`. Debug artifacts are diagnostic only and are not added to the active runtime. `FrostmourneGuiDebug.exe` still does not inject or load any DLL into Wow.exe.\n
