@@ -268,12 +268,20 @@ namespace FrostmourneGui {
                     FileName = verifiedExe, WorkingDirectory = System.IO.Path.GetDirectoryName(verifiedExe),
                     UseShellExecute = false
                 };
-                Write("CreateProcess: start Wow.exe; mechanizm ladowania rozszerzen niezweryfikowany, DLL nie ladowana.");
+                Write("ETAP mechanizm_rozszerzen=BRAK: nie potwierdzono obslugi zewnetrznych natywnych DLL przez wybrany klient; bez iniekcji/proxy/hijackingu.");
+                Write("CreateProcess: start Wow.exe; DLL nie bedzie ladowana.");
                 game = Process.Start(start);
                 if (game == null) throw new InvalidOperationException("CreateProcess nie zwrocil procesu");
                 pidInfo.Text = "PID: " + game.Id;
                 gameInfo.Text = "Gra: URUCHOMIONA (supervisor)";
-                resultInfo.Text = "TEST DLL W WOW: NIEPRZETESTOWANE";
+                resultInfo.Text = "MECHANIZM DLL: BRAK | DLL W WOW: NIEPRZETESTOWANE";
+                Write("ETAP weryfikacja_klienta=PASS build=12340 sha256=" + verifiedHash + " pid=" + game.Id);
+                Write("ETAP weryfikacja_DLL=PASS dyskowy_pin_sha256=" + pinnedHash + " pid=" + game.Id);
+                Write("ETAP uruchomienie_gry=PASS pid=" + game.Id);
+                Write("ETAP mechanizm_rozszerzen=BRAK pid=" + game.Id);
+                Write("ETAP zaladowanie_DLL=NIEPRZETESTOWANE pid=" + game.Id + " win32=NIE_DOTYCZY");
+                Write("ETAP inicjalizacja_ABI=NIEPRZETESTOWANE pid=" + game.Id + " win32=NIE_DOTYCZY");
+                Write("ETAP potwierdzenie_PID_wewnatrz_DLL=NIEPRZETESTOWANE pid=" + game.Id + " win32=NIE_DOTYCZY");
                 Write("PASS uruchomienie procesu PID=" + game.Id + "; DLL in-process=NIEPRZETESTOWANE ABI=NIEPRZETESTOWANE");
             } catch(Win32Exception ex) {
                 gameInfo.Text = "Gra: FAIL CreateProcess Win32=" + ex.NativeErrorCode;
