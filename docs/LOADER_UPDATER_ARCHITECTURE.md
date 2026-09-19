@@ -1,6 +1,6 @@
-# FROSTMOURNE DLL loader and updater design (not implemented)
+# FROSTMOURNE DLL loader design and standalone updater
 
-Status: architecture proposal for the independently fingerprinted Whitemane WoW 3.3.5a / build 12340 / Windows x86 client. No loader, injected DLL, proxy, launcher modification, game module or updater exists in the active runtime as of this document. The reference EXE is not automatically an active release file.
+Status: loader, injected DLL, proxy, launcher modification and game modules remain architectural proposals. An independent experimental Windows x86 updater is now implemented under `src/updater/` with unit tests and a CI-built distribution (see `docs/UPDATER.md`). No updater or game EXE/DLL exists in the **active game runtime manifest** yet. The reference EXE is not automatically an active release file.
 
 ## System boundaries
 
@@ -47,7 +47,7 @@ No client-specific hook, function address, structural layout or production readi
 - One logging/diagnostic bus with bounded nonblocking queues and module-tagged records. No direct logging or complex work inside DllMain.
 - Keep binary linkage and loading order deterministic. No implicit cross-module globals; reject dependency cycles, missing symbols and ABI-major mismatches before activation.
 
-## Updater: release schema and atomic activation (design)
+## Updater: release schema and recoverable activation (experimental implementation; production hardening remains)
 
 Each released file record needs component ID, release ID, kind (EXE/DLL/data), path relative to installation root, byte length, SHA256, architecture, source provenance, version, dependency IDs and exact set of compatible reference EXE fingerprints/ABI constraints. A release lock binds all executable modules and configuration schema to one fully specified compatible set. Never rely on name/version strings alone. For EXE deliveries, explicitly mark whether the original reference EXE is *copied unchanged* or an independently built/modified artifact with its own hash and source provenance. Do not silently classify a user-provided binary as canonical editable source.
 
@@ -61,7 +61,7 @@ Proposed transaction states: idle -> plan -> download-to-staging -> verify byte 
 - Keep the previously accepted manifest and complete exact rollback byte set until the new release has passed post-install verification and the user has accepted the build. A rollback records errors, preserves diagnostics and restores an internally consistent set, not a random mix of older DLLs.
 - Report: active/expected EXE and DLL SHA256, versions, release ID, manifest ID, failing stage, OS error, process/module list, timestamps, logs, exception code/address if collected with user consent. Minimize sensitive contents, make upload opt-in and redact unrelated private data.
 
-Current repository verification only checks the presence of compatibility-set members. It does NOT yet enforce compatible version ranges, ABI matching, dependency cycle detection, install-time journaling, runtime image integrity, safe module unloading or crash upload. Those must be added before first nonempty production release; do not treat the infrastructure-only PASS as such a guarantee.
+The experimental updater validates manifest dependency cycles and exact file hashes, stages downloads and journals file replacements with one-level rollback. The repository runtime verifier still checks compatibility-set membership but does not enforce ABI ranges. Loaded-image validation, Whitemane launcher coexistence tests, safe module unloading and crash upload are not implemented; do not treat infrastructure or CI PASS as production readiness.
 
 ## First implementation gate
 
