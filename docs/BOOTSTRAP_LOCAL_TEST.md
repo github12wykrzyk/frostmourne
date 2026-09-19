@@ -11,10 +11,10 @@ No game executable, client hooks, injected code or game files are included.
 
 ## First local test
 1. Extract all package files to an ordinary writable folder outside the game installation.
-2. Double-click `FrostmourneLocalSmoke.exe` (or run from a Windows terminal to retain output). Do **not** copy the DLL into the game folder.
+2. Double-click `FrostmourneLocalSmoke.exe`. The new tester shows a persistent result dialog with success or failure and the numeric error code. Click OK to close it. Do **not** copy the DLL into the game folder.
 3. A successful run prints `LOCAL_BOOTSTRAP_SMOKE_PASS; no other process was accessed`.
 4. The DLL writes a local UTF-16LE diagnostic log under `%LOCALAPPDATA%\Frostmourne\logs\bootstrap-<PID>.log`. The PID belongs to the smoke tester, **not** Wow.exe.
-5. On error, record terminal output and Windows error codes. Do not retry with elevated privileges or modify Whitemane files.
+5. On error, send the text and numeric code shown in the result dialog. On success, send the success message and optionally the matching DLL log. Do not retry with elevated privileges or modify Whitemane files.
 
 `FrostmourneLocalSmoke.exe` starts its own process, loads the DLL using Windows `LoadLibraryW`, calls the ABI exports from the same process, checks the returned result, and unloads the DLL after an explicit shutdown. It neither scans running processes nor opens another process handle.
 
