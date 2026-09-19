@@ -78,7 +78,11 @@ static DWORD check(DWORD *matched_pid, WCHAR *out, size_t cap) {
     LONGLONG bytes = 0;
     *matched_pid = 0;
     add(out, cap, L"FROSTMOURNE - odczytowa diagnostyka procesu Wow.exe\r\n");
+#ifdef FM_LOCAL_INPROCESS
+    add(out, cap, L"Diagnostyka tozsamosci przed pojedynczym testem lokalnym.\r\n\r\n");
+#else
     add(out, cap, L"Program nie wstrzykuje DLL i nie uruchamia kodu w grze.\r\n\r\n");
+#endif
     snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) {
         add(out, cap, L"BLAD: lista procesow, Win32=%lu.\r\n", GetLastError());
@@ -198,8 +202,10 @@ static DWORD check(DWORD *matched_pid, WCHAR *out, size_t cap) {
         add(out, cap, L"ETAP 3: brak DLL na liscie modulow; inicjalizacja NIEPOTWIERDZONA.\r\n");
     else
         add(out, cap, L"ETAP 3: obecnosc DLL nieustalona; inicjalizacja NIEPOTWIERDZONA.\r\n");
+#ifndef FM_LOCAL_INPROCESS
     add(out, cap, L"Nie znaleziono autoryzowanego interfejsu rozszerzen klienta; "
         L"zdalne ladowanie nie zostalo podjete.\r\n");
+#endif
     return 0;
 }
 static DWORD save_log(const WCHAR *message, DWORD pid, WCHAR *destination, size_t chars) {
