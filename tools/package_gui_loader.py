@@ -18,9 +18,29 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def validate_managed_x86(path: Path) -> dict:
+    import pefile
+    info = audit(path, dll=False)
+    pe = pefile.PE(str(path))
+    try:
+        imports = {entry.dll.decode("ascii", "strict").lower()
+                   for entry in getattr(pe, "DIRECTORY_ENTRY_IMPORT", [])}
+        if "mscoree.dll" not in imports:
+            raise ValueError(f"{path.name}: missing expected .NET entrypoint")
+        clr_directory = pe.OPTIONAL_HEADER.DATA_DIRECTORY[14]
+        if not clr_directory.VirtualAddress or not clr_directory.Size:
+            raise ValueError(f"{path.name}: missing CLR header")
+        if pe.FILE_HEADER.Machine != 0x14c:
+            raise ValueError(f"{path.name}: not x86 PE32")
+        if any(s in {"kernel32.dll", "ntdll.dll"} for s in imports):
+            raise ValueError(f"{path.name}: unexpected direct native Win32 imports")
+    finally:
+        pe.close()
+    return info
+
+
 def main() -> int:
     try:
-        import pefile
         metadata = json.loads((ROOT / "reference/client/reference.json").read_text(encoding="utf-8"))
         if metadata["sha256"] != REF or metadata["build"] != 12340:
             raise ValueError("reference client fingerprint mismatch")
@@ -31,31 +51,29 @@ def main() -> int:
                       "SetWindowsHookEx", "NtCreateThreadEx", "LoadLibraryW", "OpenProcess(")
         if any(name in source for name in disallowed):
             raise ValueError("GUI contains disallowed process-loading API")
+
         dll = DIST / "FrostmourneBootstrap.dll"
+        debug_dll = DIST / "FrostmourneBootstrapDebug.dll"
         exe = DIST / "FrostmourneGui.exe"
+        debug_exe = DIST / "FrostmourneGuiDebug.exe"
+
         dll_info = audit(dll, dll=True)
-        exe_info = audit(exe, dll=False)
-        pe = pefile.PE(str(exe))
-        try:
-            imports = {entry.dll.decode("ascii", "strict").lower()
-                       for entry in getattr(pe, "DIRECTORY_ENTRY_IMPORT", [])}
-            if "mscoree.dll" not in imports:
-                raise ValueError("GUI executable lacks expected .NET entrypoint")
-            clr_directory = pe.OPTIONAL_HEADER.DATA_DIRECTORY[14]
-            if not clr_directory.VirtualAddress or not clr_directory.Size:
-                raise ValueError("GUI executable lacks CLR header")
-            if not pe.DIRECTORY_ENTRY_IMPORT or pe.FILE_HEADER.Machine != 0x14c:
-                raise ValueError("GUI is not x86 PE32")
-            if any(s.lower() in {"kernel32.dll", "ntdll.dll"} for s in imports):
-                raise ValueError("GUI has unexpected direct native Win32 imports")
-        finally:
-            pe.close()
+        debug_dll_info = audit(debug_dll, dll=True)
+        exe_info = validate_managed_x86(exe)
+        debug_exe_info = validate_managed_x86(debug_exe)
+
         pin = f"{dll_info['sha256']} {dll_info['size_bytes']}\n".encode("ascii")
         (DIST / "bootstrap.sha256").write_bytes(pin)
         readme = (ROOT / "docs/GUI_LOADER_TEST.md").read_bytes()
-        files = {dll.name: dll_info, debug_dll.name: debug_dll_info,\n                 exe.name: exe_info, debug_exe.name: debug_exe_info,
-                 "bootstrap.sha256": {"sha256": sha(pin), "size_bytes": len(pin)},
-                 "README-LOADER.md": {"sha256": sha(readme), "size_bytes": len(readme)}}
+
+        files = {
+            dll.name: dll_info,
+            debug_dll.name: debug_dll_info,
+            exe.name: exe_info,
+            debug_exe.name: debug_exe_info,
+            "bootstrap.sha256": {"sha256": sha(pin), "size_bytes": len(pin)},
+            "README-LOADER.md": {"sha256": sha(readme), "size_bytes": len(readme)},
+        }
         manifest = {
             "schema_version": 1,
             "test_kind": "gui-launch-without-injection",
@@ -66,9 +84,22 @@ def main() -> int:
             "active_runtime": False,
             "files": files,
         }
-        payloads = {dll.name: dll.read_bytes(), debug_dll.name: debug_dll.read_bytes(),\n                    exe.name: exe.read_bytes(), debug_exe.name: debug_exe.read_bytes(),
-                    "bootstrap.sha256": pin, "README-LOADER.md": readme,
-                    "test_manifest.json": (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode("utf-8")}
+        payloads = {
+            dll.name: dll.read_bytes(),
+            debug_dll.name: debug_dll.read_bytes(),
+            exe.name: exe.read_bytes(),
+            debug_exe.name: debug_exe.read_bytes(),
+            "bootstrap.sha256": pin,
+            "README-LOADER.md": readme,
+            "test_manifest.json": (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode("utf-8"),
+        }
+        for optional in ("FrostmourneGuiDebug.pdb", "FrostmourneBootstrapDebug.pdb"):
+            q = DIST / optional
+            if q.is_file():
+                data = q.read_bytes()
+                payloads[optional] = data
+                files[optional] = {"sha256": sha(data), "size_bytes": len(data)}
+
         if "Wow.exe" in payloads or any("LocalLoad" in f for f in payloads):
             raise ValueError("forbidden legacy executable in package")
         with zipfile.ZipFile(OUT, "w", compression=zipfile.ZIP_DEFLATED) as z:

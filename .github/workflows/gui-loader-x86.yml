@@ -32,7 +32,7 @@ jobs:
           if errorlevel 1 exit /b 1
           python tools/verify_repo.py
           if errorlevel 1 exit /b 1
-      - name: Compile original diagnostic bootstrap DLL for x86
+      - name: Compile test and debug bootstrap DLLs for x86
         shell: cmd
         run: |
           for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set VSINSTALL=%%i
@@ -42,10 +42,14 @@ jobs:
           if not exist dist mkdir dist
           cl /nologo /W4 /WX /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c /link /INCREMENTAL:NO
           if errorlevel 1 exit /b 1
-      - name: Compile standalone WinForms .NET Framework GUI for x86
+          cl /nologo /W4 /WX /MT /Od /Zi /DFM_DEBUG_BUILD /LD /Fe:dist\FrostmourneBootstrapDebug.dll src\bootstrap\bootstrap.c /link /DEBUG /PDB:dist\FrostmourneBootstrapDebug.pdb /INCREMENTAL:NO
+          if errorlevel 1 exit /b 1
+      - name: Compile WinForms GUI x86 release and debug
         shell: cmd
         run: |
           "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /optimize+ /out:dist\FrostmourneGui.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs
+          if errorlevel 1 exit /b 1
+          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /debug:full /define:DEBUG /out:dist\FrostmourneGuiDebug.exe /pdb:dist\FrostmourneGuiDebug.pdb /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs
           if errorlevel 1 exit /b 1
       - name: Audit PE32, ABI, dependencies and immutable ZIP contents
         shell: cmd
@@ -54,12 +58,14 @@ jobs:
           if errorlevel 1 exit /b 1
           python tools/package_gui_loader.py
           if errorlevel 1 exit /b 1
-      - name: Run no-game packaged DLL self-test (never starts Wow.exe)
+      - name: Run no-game packaged DLL self-tests
         shell: cmd
         run: |
           dist\FrostmourneGui.exe --self-test
           if errorlevel 1 exit /b 1
-      - name: Upload independent GUI loader and bundled test DLL
+          dist\FrostmourneGuiDebug.exe --self-test
+          if errorlevel 1 exit /b 1
+      - name: Upload independent GUI loader with test/debug DLLs
         uses: actions/upload-artifact@v4
         with:
           name: frostmourne-gui-loader-x86

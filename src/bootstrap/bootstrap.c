@@ -4,7 +4,14 @@
 #include <wchar.h>
 #include "bootstrap.h"
 
-#ifndef FM_VERSION\n#define FM_VERSION L"0.1.0-test1"\n#endif\n#ifdef FM_DEBUG_BUILD\n#define FM_BUILD_FLAVOR L"debug"\n#else\n#define FM_BUILD_FLAVOR L"release"\n#endif
+#ifndef FM_VERSION
+#define FM_VERSION L"0.1.0-test1"
+#endif
+#ifdef FM_DEBUG_BUILD
+#define FM_BUILD_FLAVOR L"debug"
+#else
+#define FM_BUILD_FLAVOR L"release"
+#endif
 static volatile LONG g_state = 0; /* 0=attached, 1=initializing, 2=initialized, 3=stopped */
 static DWORD g_pid = 0;
 static FILETIME g_attached_at;
@@ -38,7 +45,7 @@ static DWORD write_diagnostic(DWORD elapsed_ms) {
     if (swprintf_s(file, MAX_PATH, L"%ls\\bootstrap-%lu.log", sub, (unsigned long)g_pid) < 0) return ERROR_BUFFER_OVERFLOW;
     GetSystemTime(&now);
     if (swprintf_s(line, sizeof(line)/sizeof(line[0]), L"%04u-%02u-%02uT%02u:%02u:%02uZ event=INITIALIZED module=FrostmourneBootstrap version=%ls build=%ls abi=%lu.%lu pid=%lu attach_filetime=%08lx%08lx initialization_ms=%lu\r\n",
-        now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, FM_VERSION,
+        now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, FM_VERSION, FM_BUILD_FLAVOR,
         (unsigned long)FM_ABI_MAJOR, (unsigned long)FM_ABI_MINOR, (unsigned long)g_pid,
         (unsigned long)g_attached_at.dwHighDateTime, (unsigned long)g_attached_at.dwLowDateTime,
         (unsigned long)elapsed_ms) < 0) return ERROR_BUFFER_OVERFLOW;
