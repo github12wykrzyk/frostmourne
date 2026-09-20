@@ -40,9 +40,9 @@
       "id": "auto-pickpocket",
       "source": "src/auto_pickpocket",
       "docs": "docs/AUTO_PICKPOCKET.md",
-      "platform": "client-independent C core; Windows x86 integration pending",
-      "status": "experimental-core-only",
-      "distribution": "source and no-game CI tests; no gameplay DLL or ZIP",
+      "platform": "Windows x86 test bootstrap (client-independent C core)",
+      "status": "experimental-inprocess-core-only-no-gameplay-adapter",
+      "distribution": "GitHub Actions frostmourne-gui-loader-x86: ABI and inert core status test, no Pick Pocket actions",
       "active_runtime": false
     },
     {
