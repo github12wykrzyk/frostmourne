@@ -352,8 +352,15 @@ static void fm_tick_on_window_thread(void) {
     DWORD now = GetTickCount();
     int i;
     if (InterlockedCompareExchange(&g_stop, 0, 0) ||
-        InterlockedCompareExchange(&g_status, 0, 0) == FM_AP_NATIVE_FAILED ||
-        !g_engine || !fm_exact_cast_gate()) return;
+        InterlockedCompareExchange(&g_status, 0, 0) == FM_AP_NATIVE_FAILED) return;
+    if (!g_engine) {
+        fm_log_periodic("event=TICK_BLOCKED reason=engine_null action=SKIPPED", &g_last_frame_diag);
+        return;
+    }
+    if (!fm_exact_cast_gate()) {
+        fm_log_periodic("event=TICK_BLOCKED reason=cast_prologue_or_image_changed action=SKIPPED", &g_last_frame_diag);
+        return;
+    }
     if (!fm_lua_query(g_preflight, answer, sizeof(answer))) {
         if (g_last_snapshot && now - g_last_snapshot > 2000) {
             fm_ap_reset_world(g_engine, ++g_world_epoch);
@@ -376,12 +383,21 @@ static void fm_tick_on_window_thread(void) {
         parts[i] = item;
         item = strtok_s(NULL, "|", &context);
     }
-    if (!parts[0] || !parts[1] || !parts[2] ||
-        !fm_parse_guid(parts[1], &player)) return;
+    if (!parts[0] || !parts[1] || !parts[2]) {
+        fm_log_periodic("event=PREFLIGHT_PARSE_FAILED reason=missing_fields action=SKIPPED", &g_last_frame_diag);
+        return;
+    }
+    if (!fm_parse_guid(parts[1], &player)) {
+        fm_log_periodic("event=PREFLIGHT_PARSE_FAILED reason=player_guid action=SKIPPED", &g_last_frame_diag);
+        return;
+    }
     if (strcmp(parts[0], "IDLE") == 0)
         fm_log_periodic("event=PREFLIGHT_IDLE reason=stealth_combat_busy_or_spell_unavailable", &g_last_frame_diag);
     area = strtoul(parts[2], &end, 10);
-    if (!end || *end) return;
+    if (!end || *end) {
+        fm_log_periodic("event=PREFLIGHT_PARSE_FAILED reason=map_id action=SKIPPED", &g_last_frame_diag);
+        return;
+    }
     if (g_player_guid != player || g_map_id != area) {
         g_player_guid = player;
         g_map_id = area;
@@ -443,6 +459,8 @@ static LRESULT CALLBACK fm_window_proc(HWND hwnd, UINT message, WPARAM wparam, L
         InterlockedExchange(&g_tick_posted, 0);
         if (InterlockedCompareExchange(&g_busy, 1, 0) == 0) {
             if (!g_action_thread_id) g_action_thread_id = GetCurrentThreadId();
+            if (InterlockedCompareExchange(&g_dispatch_count, 0, 0) == 1)
+                fm_log("event=WINDOW_TICK_ENTER adapter=RUNNING");
             fm_tick_on_window_thread();
             InterlockedExchange(&g_busy, 0);
         }
