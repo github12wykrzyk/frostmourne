@@ -59,6 +59,12 @@ static unsigned long g_map_id;
 static DWORD g_last_snapshot;
 static uint64_t g_last_pending;
 static DWORD g_action_thread_id;
+static volatile LONG g_post_count;
+static volatile LONG g_dispatch_count;
+static DWORD g_last_worker_diag;
+static DWORD g_last_lua_diag;
+static DWORD g_last_frame_diag;
+static DWORD g_last_scan_diag;
 
 /* From tools/audit_interrupt_bridge.py run 35478822571, exact registered image.
  * x86 uint64_t uses two stack slots: four C parameters occupy twenty bytes. */
@@ -88,6 +94,14 @@ static void fm_log(const char *message) {
     WriteFile(file, line, (DWORD)strlen(line), &count, NULL);
     CloseHandle(file);
     OutputDebugStringA(line);
+}
+
+static void fm_log_periodic(const char *message, DWORD *last) {
+    DWORD now = GetTickCount();
+    if (!*last || now - *last >= 5000u) {
+        *last = now;
+        fm_log(message);
+    }
 }
 
 static int fm_safe_read(uintptr_t address, void *buffer, size_t bytes) {
@@ -153,12 +167,24 @@ static int fm_lua_query(const char *script, char *result, size_t capacity) {
     if (!fm_safe_read(FM_LUA_STATE_VA, &state, sizeof(state)) || !state ||
         !fm_executable(FM_LUA_LOAD_VA) || !fm_executable(FM_LUA_PCALL_VA) ||
         !fm_executable(FM_LUA_GETTOP_VA) || !fm_executable(FM_LUA_SETTOP_VA) ||
-        !fm_executable(FM_LUA_TOSTRING_VA)) return 0;
+        !fm_executable(FM_LUA_TOSTRING_VA)) {
+        fm_log_periodic("event=LUA_PREFLIGHT_BLOCKED reason=state_pointer_or_function_gate", &g_last_lua_diag);
+        return 0;
+    }
     __try {
         top = gettop(state);
-        if (top < 0 || top > 2048) return 0;
+        if (top < 0 || top > 2048) {
+            fm_log_periodic("event=LUA_PREFLIGHT_BLOCKED reason=stack_depth", &g_last_lua_diag);
+            return 0;
+        }
         status = load(state, script, strlen(script), "=FrostmourneAP");
-        if (status == 0) status = pcall(state, 0, 1, 0);
+        if (status != 0)
+            fm_log_periodic("event=LUA_PREFLIGHT_BLOCKED reason=load_error", &g_last_lua_diag);
+        if (status == 0) {
+            status = pcall(state, 0, 1, 0);
+            if (status != 0)
+                fm_log_periodic("event=LUA_PREFLIGHT_BLOCKED reason=runtime_error", &g_last_lua_diag);
+        }
         if (status == 0 && gettop(state) == top + 1) {
             value = tostring(state, -1, &length);
             if (value && length && length < capacity) {
@@ -167,6 +193,8 @@ static int fm_lua_query(const char *script, char *result, size_t capacity) {
                 ok = 1;
             }
         }
+        if (!ok && status == 0)
+            fm_log_periodic("event=LUA_PREFLIGHT_BLOCKED reason=non_string_or_stack_result", &g_last_lua_diag);
         settop(state, top);
     } __except(EXCEPTION_EXECUTE_HANDLER) {
         fm_log("event=LUA_EXCEPTION adapter=FAILED gameplay_actions=DISABLED");
@@ -335,6 +363,7 @@ static void fm_tick_on_window_thread(void) {
         return;
     }
     if (strcmp(answer, "OFF") == 0) {
+        fm_log_periodic("event=PREFLIGHT_OFF reason=not_logged_in_or_not_rogue", &g_last_frame_diag);
         if (g_last_snapshot) {
             fm_ap_reset_world(g_engine, ++g_world_epoch);
             g_last_snapshot = 0;
@@ -349,6 +378,8 @@ static void fm_tick_on_window_thread(void) {
     }
     if (!parts[0] || !parts[1] || !parts[2] ||
         !fm_parse_guid(parts[1], &player)) return;
+    if (strcmp(parts[0], "IDLE") == 0)
+        fm_log_periodic("event=PREFLIGHT_IDLE reason=stealth_combat_busy_or_spell_unavailable", &g_last_frame_diag);
     area = strtoul(parts[2], &end, 10);
     if (!end || *end) return;
     if (g_player_guid != player || g_map_id != area) {
@@ -384,7 +415,7 @@ static void fm_tick_on_window_thread(void) {
     f.pickpocket_available = 1;
     /* Fail closed until the exact-client object manager and local GUID agree. */
     if (f.stealthed && !fm_scan_nearby(player, units, FM_AP_MAX_UNITS, &unit_count)) {
-        fm_log("event=NEARBY_SCAN_NOT_READY action=SKIPPED");
+        fm_log_periodic("event=NEARBY_SCAN_NOT_READY action=SKIPPED reason=object_manager_or_layout", &g_last_scan_diag);
         return;
     }
     if (strcmp(parts[0], "OK") == 0 && parts[3] &&
@@ -396,6 +427,8 @@ static void fm_tick_on_window_thread(void) {
                 break;
             }
     }
+    if (f.stealthed && !unit_count)
+        fm_log_periodic("event=NEARBY_SCAN_EMPTY action=WAITING", &g_last_scan_diag);
     f.units = units;
     f.unit_count = unit_count;
     if (fm_ap_tick(g_engine, &f, (uint64_t)now, fm_native_cast, NULL))
@@ -405,6 +438,8 @@ static void fm_tick_on_window_thread(void) {
 static LRESULT CALLBACK fm_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     WNDPROC previous = g_previous;
     if (message == FM_WM_TICK && hwnd == g_window) {
+        if (InterlockedIncrement(&g_dispatch_count) == 1)
+            fm_log("event=WINDOW_TICK_RECEIVED phase=PREFLIGHT");
         InterlockedExchange(&g_tick_posted, 0);
         if (InterlockedCompareExchange(&g_busy, 1, 0) == 0) {
             if (!g_action_thread_id) g_action_thread_id = GetCurrentThreadId();
@@ -451,15 +486,29 @@ static DWORD WINAPI fm_native_worker(LPVOID parameter) {
            InterlockedCompareExchange(&g_status, 0, 0) != FM_AP_NATIVE_FAILED) {
         DWORD pid = 0;
         if (g_window && IsWindow(g_window)) {
+            char pulse[240];
             GetWindowThreadProcessId(g_window, &pid);
+            if (!g_last_worker_diag || GetTickCount() - g_last_worker_diag >= 5000u) {
+                if (sprintf_s(pulse, sizeof(pulse),
+                    "event=DISPATCH_HEARTBEAT posted=%ld delivered=%ld pending=%ld status=%ld",
+                    (long)InterlockedCompareExchange(&g_post_count, 0, 0),
+                    (long)InterlockedCompareExchange(&g_dispatch_count, 0, 0),
+                    (long)InterlockedCompareExchange(&g_tick_posted, 0, 0),
+                    (long)InterlockedCompareExchange(&g_status, 0, 0)) >= 0)
+                    fm_log(pulse);
+                g_last_worker_diag = GetTickCount();
+            }
             if (pid != GetCurrentProcessId()) {
                 fm_log("event=WINDOW_HANDLE_REUSED adapter=FAILED gameplay_actions=DISABLED");
                 InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
                 break;
             }
-            if (InterlockedCompareExchange(&g_tick_posted, 1, 0) == 0 &&
-                !PostMessageW(g_window, FM_WM_TICK, 0, 0))
-                InterlockedExchange(&g_tick_posted, 0);
+            if (InterlockedCompareExchange(&g_tick_posted, 1, 0) == 0) {
+                if (PostMessageW(g_window, FM_WM_TICK, 0, 0))
+                    InterlockedIncrement(&g_post_count);
+                else
+                    InterlockedExchange(&g_tick_posted, 0);
+            }
             Sleep(100);
             continue;
         }
@@ -490,6 +539,14 @@ static DWORD WINAPI fm_native_worker(LPVOID parameter) {
             SetLastError(0);
             old = SetWindowLongPtrW(window.hwnd, GWLP_WNDPROC, (LONG_PTR)fm_window_proc);
             if (old) {
+                char info[256], cls[80] = {0}, title[96] = {0};
+                DWORD window_thread = GetWindowThreadProcessId(window.hwnd, NULL);
+                (void)GetClassNameA(window.hwnd, cls, sizeof(cls));
+                (void)GetWindowTextA(window.hwnd, title, sizeof(title));
+                if (sprintf_s(info, sizeof(info),
+                    "event=WINDOW_SELECTED thread=%lu class=%s title=%s",
+                    (unsigned long)window_thread, cls, title) >= 0)
+                    fm_log(info);
                 g_previous = (WNDPROC)old;
                 g_window = window.hwnd;
                 attempts = 0;
@@ -514,6 +571,8 @@ int fm_ap_native_start(FM_AP_ENGINE *engine) {
     if (!engine || g_thread) return 0;
     g_engine = engine;
     g_stop = g_busy = g_tick_posted = 0;
+    g_post_count = g_dispatch_count = 0;
+    g_last_worker_diag = g_last_lua_diag = g_last_frame_diag = g_last_scan_diag = 0;
     g_status = FM_AP_NATIVE_STARTING;
     g_thread = CreateThread(NULL, 0, fm_native_worker, NULL, 0, NULL);
     return g_thread != NULL;
