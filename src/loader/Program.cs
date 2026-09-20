@@ -368,7 +368,7 @@ namespace FrostmourneGui {
                 try {
                     if (selected.Exists(m => m.Enabled && m.Manifest == null)) InstallCastProbeAddon();
                     foreach (Module m in selected.FindAll(x => x.Enabled && x.Manifest != null))
-                        ModuleCatalog.InstallAssets(m, System.IO.Path.GetDirectoryName(verifiedExe), Write);
+                        ModuleCatalog.InstallAssets(m, System.IO.Path.GetDirectoryName(verifiedExe), kickTrial.Checked, Write);
                 } catch (Exception addonError) {
                     gameInfo.Text = "Gra: NIEURUCHOMIONA - instalacja dodatku FAIL";
                     resultInfo.Text = "ADDON FAIL: " + addonError.Message;

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
@@ -151,14 +153,34 @@ namespace FrostmourneGui {
             foreach (Module m in byId.Values) visit(m);
             return sorted;
         }
-        internal static void InstallAssets(Module m, string gameDirectory, Action<string> log) {
+        internal static void InstallAssets(Module m, string gameDirectory, bool kickTrial, Action<string> log) {
             foreach (ModuleAsset asset in m.Manifest.assets ?? new ModuleAsset[0]) {
                 string targetRoot = Path.Combine(gameDirectory, "Interface", "AddOns");
                 string target = SafeFile(targetRoot, asset.install_path);
                 string source = SafeFile(Path.GetDirectoryName(m.Path), asset.path);
+                // Verify immutable source bytes from the module manifest first. The
+                // opt-in Lua variant is derived only from the exact verified source.
+                if (!String.Equals(Verify.Hash(source), asset.sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Modul ma zmodyfikowany plik dodatku: " + asset.path);
+                byte[] payload = File.ReadAllBytes(source);
+                string desiredHash = asset.sha256;
+                bool kickAddon = String.Equals(m.Id, "frostmourne-bootstrap", StringComparison.OrdinalIgnoreCase) &&
+                    m.Manifest.bootstrap_mode == "legacy_bootstrap" &&
+                    String.Equals(asset.install_path.Replace('\\', '/'),
+                        "FrostmourneCastProbe/FrostmourneCastProbe.lua", StringComparison.OrdinalIgnoreCase);
+                if (kickAddon && kickTrial) {
+                    string lua = File.ReadAllText(source, Encoding.UTF8);
+                    const string marker = "local kickRequests = false";
+                    if (!lua.Contains(marker) || lua.IndexOf(marker, StringComparison.Ordinal) !=
+                        lua.LastIndexOf(marker, StringComparison.Ordinal))
+                        throw new InvalidDataException("Nieprawidlowy znacznik konfiguracji Kick w zweryfikowanym dodatku");
+                    payload = Encoding.UTF8.GetBytes(lua.Replace(marker, "local kickRequests = true"));
+                    using (SHA256 sha = SHA256.Create())
+                        desiredHash = BitConverter.ToString(sha.ComputeHash(payload)).Replace("-", "").ToLowerInvariant();
+                }
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
                 bool exists = File.Exists(target);
-                if (exists && !String.Equals(Verify.Hash(target), asset.sha256, StringComparison.OrdinalIgnoreCase)) {
+                if (exists && !String.Equals(Verify.Hash(target), desiredHash, StringComparison.OrdinalIgnoreCase)) {
                     // Only migrate known legacy FrostmourneCastProbe files. Other addons and
                     // user-modified files are never silently replaced or deleted.
                     string name = Path.GetFileName(target);
@@ -178,8 +200,8 @@ namespace FrostmourneGui {
                     string backup = target + ".fmbackup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                     string staged = target + ".fmstage-" + Guid.NewGuid().ToString("N");
                     try {
-                        File.Copy(source, staged, false);
-                        if (!String.Equals(Verify.Hash(staged), asset.sha256, StringComparison.OrdinalIgnoreCase))
+                        File.WriteAllBytes(staged, payload);
+                        if (!String.Equals(Verify.Hash(staged), desiredHash, StringComparison.OrdinalIgnoreCase))
                             throw new InvalidDataException("SHA256 przygotowanego dodatku niezgodne: " + name);
                         // Atomic replacement: File.Replace produces a backup of the exact previous file.
                         File.Replace(staged, target, backup);
@@ -190,16 +212,19 @@ namespace FrostmourneGui {
                 } else if (!exists) {
                     string staged = target + ".fmstage-" + Guid.NewGuid().ToString("N");
                     try {
-                        File.Copy(source, staged, false);
-                        if (!String.Equals(Verify.Hash(staged), asset.sha256, StringComparison.OrdinalIgnoreCase))
+                        File.WriteAllBytes(staged, payload);
+                        if (!String.Equals(Verify.Hash(staged), desiredHash, StringComparison.OrdinalIgnoreCase))
                             throw new InvalidDataException("SHA256 przygotowanego dodatku niezgodne: " + Path.GetFileName(target));
                         File.Move(staged, target);
                     } finally {
                         if (File.Exists(staged)) File.Delete(staged);
                     }
                 }
-                if (!String.Equals(Verify.Hash(target), asset.sha256, StringComparison.OrdinalIgnoreCase))
+                if (!String.Equals(Verify.Hash(target), desiredHash, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("Nieudana instalacja dodatku " + target);
+                log("ETAP addon_file=PASS path=" + target + " sha256=" + desiredHash +
+                    " kick_trial_requested=" + kickTrial + " effective_kick_requests=" +
+                    (kickAddon ? (kickTrial ? "true" : "false") : "NIE_DOTYCZY"));
                 log("ASSET INSTALL verified " + target);
             }
         }

@@ -53,6 +53,16 @@ def main() -> int:
                        'payload.Replace("local kickRequests = false", "local kickRequests = true")'):
             if marker not in source:
                 raise ValueError("GUI source lacks verified addon installation: " + marker)
+        # Regression gate: the module-manifest installation path must honour
+        # the same opt-in Kick state as the legacy pinned bootstrap path.
+        catalog = (ROOT / "src/loader/ModuleCatalog.cs").read_text(encoding="utf-8")
+        for marker in ('InstallAssets(Module m, string gameDirectory, bool kickTrial, Action<string> log)',
+                       'asset.install_path.Replace', 'desiredHash', 'local kickRequests = true',
+                       'effective_kick_requests='):
+            if marker not in catalog:
+                raise ValueError("module addon install fails to carry the Kick opt-in state: " + marker)
+        if 'ModuleCatalog.InstallAssets(m, System.IO.Path.GetDirectoryName(verifiedExe), kickTrial.Checked, Write)' not in source:
+            raise ValueError("GUI does not forward checkbox state to the module asset installer")
         remote = (ROOT / "src/loader/RemoteBootstrap.cs").read_text(encoding="utf-8")
         expected = ("CreateRemoteThread", "WriteProcessMemory", "VirtualAllocEx",
                     "LoadLibraryW", "Frostmourne_Initialize", "Frostmourne_GetAbi",

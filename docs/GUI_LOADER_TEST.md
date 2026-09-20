@@ -124,3 +124,26 @@ The loader's GUI can remain open while the game runs. Closing the GUI does not f
 ## CI validation boundary
 
 GitHub Actions compiles test/debug bootstrap and release/debug GUI for PE32 x86; runs the exact-client fingerprint, current runtime and repository verifiers; checks exports, imports, architecture, pin and ZIP manifest; and runs no-game GUI self-tests. GitHub Actions does **not** launch Wow.exe or prove that remote loading works with this Whitemane process. Only the user's local runtime log with the same PID and initialized packet can establish that. The experimental ZIP stays on work until the user accepts a proven result.
+
+
+## Auto Kick OFF despite hook_installed=1 (module-manifest regression fix)
+
+If the loader discovers `modules/frostmourne-bootstrap/module.json`, it runs the
+manifest-based module installation path instead of the bundled legacy bootstrap
+path. Earlier builds installed `FrostmourneCastProbe.lua` with the manifest's
+default `local kickRequests = false` even when the GUI Auto Kick trial checkbox
+was checked. The result was `hook_installed=1` in the native DLL but a yellow
+`AUTO KICK OFF` Lua banner, with no marker sent to the DLL. This was a
+loader/addon configuration bug, not proof that native Kick succeeded or failed.
+
+The module asset installer now checks SHA256 of the original module payload,
+derives the `kickRequests = true` variant only when the Auto Kick trial is
+explicitly checked and the exact legacy bootstrap Lua asset is selected,
+hashes the resulting payload, backs up known previous addon versions, installs
+it atomically, and verifies the actual installed hash. Both the module and
+legacy bootstrap routes honour the checkbox. Logs record
+`ETAP addon_file=PASS ... kick_trial_requested=True effective_kick_requests=true`
+for the manifest route. An existing game instance must be fully closed before
+testing the replacement addon. `hook_installed=1` plus the yellow trial banner
+are only activation prerequisites; actual interruption is not confirmed until
+a matching combat log event is observed.
