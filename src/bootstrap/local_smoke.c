@@ -30,6 +30,7 @@ int wmain(void) {
     DWORD (WINAPI *initialize)(LPVOID);
     DWORD (WINAPI *shutdown)(LPVOID);
     DWORD (WINAPI *abi)(LPVOID);
+    DWORD (WINAPI *ap_status)(LPVOID);
     FM_INIT_PACKET packet;
     DWORD result, error, n;
     n = GetModuleFileNameW(NULL,path,MAX_PATH);
@@ -58,7 +59,8 @@ int wmain(void) {
     initialize = (DWORD(WINAPI *)(LPVOID))GetProcAddress(module,"_Frostmourne_Initialize@4");
     shutdown = (DWORD(WINAPI *)(LPVOID))GetProcAddress(module,"_Frostmourne_Shutdown@4");
     abi = (DWORD(WINAPI *)(LPVOID))GetProcAddress(module,"_Frostmourne_GetAbi@4");
-    if (!initialize || !shutdown || !abi) {
+    ap_status = (DWORD(WINAPI *)(LPVOID))GetProcAddress(module,"_Frostmourne_GetAutoPickpocketStatus@4");
+    if (!initialize || !shutdown || !abi || !ap_status) {
         FreeLibrary(module);
         return finish(13, L"BLAD: biblioteka nie udostepnia wymaganego ABI.");
     }
@@ -82,6 +84,10 @@ int wmain(void) {
             (unsigned long)packet.win32_error);
         FreeLibrary(module);
         return finish(15, message);
+    }
+    if (ap_status(NULL)!=FM_AP_CORE_INERT) {
+        FreeLibrary(module);
+        return finish(17, L"BLAD: Auto Pickpocket core nie jest zainicjalizowany lub jest aktywny bez adaptera.");
     }
     if (shutdown(NULL)!=FM_INIT_MAGIC) {
         FreeLibrary(module);
