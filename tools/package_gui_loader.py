@@ -49,7 +49,8 @@ def main() -> int:
             raise ValueError("GUI source has no exact client gate or launch path")
         for marker in ("InstallCastProbeAddon();", "ETAP addon_install=PASS",
                        '"Interface", "AddOns", "FrostmourneCastProbe"',
-                       "Verify.Hash(to) != expected"):
+                       "Verify.Hash(to) != expected", "kickTrial.Checked",
+                       'payload.Replace("local kickRequests = false", "local kickRequests = true")'):
             if marker not in source:
                 raise ValueError("GUI source lacks verified addon installation: " + marker)
         remote = (ROOT / "src/loader/RemoteBootstrap.cs").read_text(encoding="utf-8")
@@ -57,7 +58,8 @@ def main() -> int:
                     "LoadLibraryW", "Frostmourne_Initialize", "Frostmourne_GetAbi",
                     "GetExitCodeThread", "observed_pid",
                     "Frostmourne_GetAutoPickpocketStatus", "auto_pickpocket_native=PASS",
-                    "Frostmourne_ProbeInterruptBindings", "live_cast=NOT_READ")
+                    "Frostmourne_ProbeInterruptBindings", "Frostmourne_StartAutoKick",
+                    "hook_installed", "kick_trial_enabled")
         if not all(name in remote for name in expected):
             raise ValueError("GUI missing required explicit in-process loading/ABI diagnostics")
         disallowed = ("SetWindowsHookEx", "NtCreateThreadEx", "PROCESS_ALL_ACCESS")
@@ -71,6 +73,15 @@ def main() -> int:
 
         dll_info = audit(dll, dll=True)
         debug_dll_info = audit(debug_dll, dll=True)
+        for candidate in (dll, debug_dll):
+            import pefile
+            image = pefile.PE(str(candidate))
+            try:
+                exports = {symbol.name for symbol in image.DIRECTORY_ENTRY_EXPORT.symbols if symbol.name}
+                if b"_Frostmourne_StartAutoKick@4" not in exports:
+                    raise ValueError(candidate.name + ": experimental Kick bridge export missing")
+            finally:
+                image.close()
         exe_info = validate_managed_x86(exe)
         debug_exe_info = validate_managed_x86(debug_exe)
 
@@ -103,6 +114,8 @@ def main() -> int:
             payloads[name] = addon_data
             files[name] = {"sha256": sha(addon_data), "size_bytes": len(addon_data)}
         addon_lua = payloads["FrostmourneCastProbe/FrostmourneCastProbe.lua"]
+        if b"local kickRequests = false" not in addon_lua or b"FMKICK12340|" not in addon_lua:
+            raise ValueError("addon lacks guarded opt-in native Kick marker bridge")
         for marker in (b"local running = true", b'frame:RegisterEvent("PLAYER_LOGIN")',
                        b'frame:RegisterEvent("PLAYER_ENTERING_WORLD")',
                        b"FM CAST PROBE: LUA AKTYWNE", b"LUA ADDON ZALADOWANY",
@@ -126,8 +139,8 @@ def main() -> int:
             "auto_pickpocket_core": "COMPILED_WITH_EXPERIMENTAL_NATIVE_SELECTED_TARGET_ADAPTER",
             "auto_pickpocket_gameplay": "NATIVE_CAST_REQUEST_IMPLEMENTED_UNTESTED_IN_GAME_NO_SERVER_LOOT_CONFIRMATION",
             "auto_interrupt_bindings": "INPROCESS_READONLY_REGISTRATION_AND_PROLOGUE_PROBE",
-            "auto_interrupt_live_cast": "ONLY_INDEPENDENT_READONLY_LUA_ADDON; NOT_NATIVE_DLL",
-            "auto_interrupt_kick": "DISABLED_NOT_IMPLEMENTED",
+            "auto_interrupt_live_cast": "LUA_CAST_API_AND_NATIVE_FRESH_TARGET_RECHECK_WHEN_OPTED_IN",
+            "auto_interrupt_kick": "EXPERIMENTAL_NATIVE_REQUEST_DEFAULT_OFF_NOT_GAMEPLAY_TESTED",
             "active_runtime": False,
             "files": files,
         }

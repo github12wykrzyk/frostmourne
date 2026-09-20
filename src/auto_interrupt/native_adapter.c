@@ -79,7 +79,7 @@ static int parse_request(const char *msg, unsigned __int64 *guid,
     ++p;
     if (!number(&p, start, '|') || !number(&p, end, '|') ||
         !number(&p, kick_spell, 0) || !value || *end <= *start ||
-        !*kick_spell) return 0;
+        *kick_spell != 1766u) return 0;
     *guid = value;
     return 1;
 }
@@ -108,7 +108,8 @@ static int process_request(const char *marker) {
     DWORD live[7]; /* spell ID at +A6C, cast time fields at +A78, +A7C */
     DWORD now, remaining;
     BYTE *object;
-    if (!parse_request(marker,&expected_guid,&expected_start,&expected_end,&kick_spell)) return 0;
+    if (!parse_request(marker,&expected_guid,&expected_start,&expected_end,&kick_spell) ||
+        InterlockedCompareExchange(&g_installed,0,0) != 1) return 0;
     /* On the same WoW Lua/UI call thread, resolve target identity again,
      * then read a fresh independent cast snapshot before issuing a cast. */
     if (!((FM_FIND_GUID)(ULONG_PTR)FM_UNIT_GUID)("target",&live_guid,0) ||
