@@ -1,6 +1,8 @@
 -- FROSTMOURNE / WoW 3.3.5a. This addon observes only official Lua API results.
 -- It neither communicates with the DLL nor casts spells or changes targets.
-local running = true -- Active without any slash commands.
+local running = true -- Auto-start.
+local kickRequests = false -- Opt-in via pinned GUI only.
+local lastKickRequest = nil
 local frame = CreateFrame("Frame")
 local elapsed = 0
 local lastKey = ""
@@ -24,7 +26,8 @@ local function showIndicator()
         indicator:SetBackdropColor(0,0,0,0.85)
         local message = indicator:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         message:SetPoint("CENTER", indicator, "CENTER", 0, 0)
-        message:SetText("|cff55ff99FM CAST PROBE: LUA AKTYWNE|r  |cffffff00AUTO KICK OFF|r")
+        message:SetText("|cff55ff99FM CAST PROBE: LUA AKTYWNE|r  " ..
+            (kickRequests and "|cffffbb00AUTO KICK TRIAL - NIEPOTWIERDZONE|r" or "|cffffff00AUTO KICK OFF|r"))
     end
     indicator:Show()
 end
@@ -36,6 +39,33 @@ local function say(message)
         return true
     end
     return false
+end
+-- UI-thread, opt-in diagnostic marker. DLL independently verifies the GUID
+-- and cast in the exact registered game client before attempting a Kick.
+local function requestNativeKick()
+    if not kickRequests then return end
+    if select(2,UnitClass("player")) ~= "ROGUE" or UnitIsDeadOrGhost("player") then return end
+    if not UnitExists("target") or not UnitCanAttack("player","target") or
+        UnitIsDeadOrGhost("target") then return end
+    local spellName = GetSpellInfo(1766)
+    if not spellName or IsSpellInRange(spellName,"target") ~= 1 then return end
+    if UnitPower("player",3) < 25 or not IsUsableSpell(1766) then return end
+    local cdStart,cdDuration = GetSpellCooldown(1766)
+    if not cdStart or (cdStart > 0 and cdDuration and cdStart + cdDuration > GetTime()) then return end
+    local name,_,_,_,starts,ends,_,_,noKick = UnitCastingInfo("target")
+    if not name then name,_,_,_,starts,ends,_,noKick = UnitChannelInfo("target") end
+    if not name or not starts or not ends or noKick then return end
+    local remaining = ends - GetTime()*1000
+    if remaining > 3000 or remaining <= 150 or starts >= ends then return end
+    local guid=UnitGUID("target")
+    if not guid or not string.match(guid,"^0x%x+$") then return end
+    local token=guid..":"..tostring(starts)..":"..tostring(ends)
+    if lastKickRequest==token then return end
+    lastKickRequest=token
+    -- Marked UnitCastingInfo is intercepted only by the matching opt-in DLL.
+    -- The marker requests an action; only actual combat logs can confirm Kick.
+    UnitCastingInfo("FMKICK12340|"..guid.."|"..
+        string.format("%.0f",starts).."|"..string.format("%.0f",ends).."|1766")
 end
 local function sample(unit)
     if not UnitExists(unit) then return nil end
@@ -63,7 +93,7 @@ frame:SetScript("OnEvent", function(self, event)
         running = true
         showIndicator()
         if not announced then
-            announced = say("LUA ADDON ZALADOWANY: monitoring castow ON automatycznie; Auto Kick OFF. DLL: sprawdz PASS w loaderze.")
+            announced = say("LUA ADDON ZALADOWANY: casty ON; "..(kickRequests and "Kick TRIAL (wynik niepotwierdzony)" or "Auto Kick OFF")..". DLL sprawdz w loaderze.")
         end
     end
 end)
@@ -71,11 +101,12 @@ frame:SetScript("OnUpdate", function(self, dt)
     if not running then return end
     if not announced then
         showIndicator()
-        announced = say("LUA ADDON ZALADOWANY: monitoring castow ON automatycznie; Auto Kick OFF. DLL: sprawdz PASS w loaderze.")
+        announced = say("LUA ADDON ZALADOWANY: casty ON; "..(kickRequests and "Kick TRIAL (wynik niepotwierdzony)" or "Auto Kick OFF")..". DLL sprawdz w loaderze.")
     end
     elapsed = elapsed + dt
     if elapsed < 0.10 then return end
     elapsed = 0
+    requestNativeKick()
     local text, key = sample("target")
     if not text then text, key = sample("focus") end
     if not text then
