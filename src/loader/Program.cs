@@ -63,6 +63,7 @@ namespace FrostmourneGui {
         long pinnedSize = 0;
         bool loading = false;
         bool checking = false;
+        bool migratedLegacyDll = false;
         string dllState = "NIEPRZETESTOWANE";
 
         internal MainWindow() {
@@ -81,6 +82,7 @@ namespace FrostmourneGui {
             ReadPin();
             Restore();
             AddDefaultDll();
+            if (migratedLegacyDll) Save(); // Persist migration so stale bootstrap paths cannot block subsequent launches.
             RefreshModules();
             poll.Interval = 1000;
             poll.Tick += (s, e) => PollGame();
@@ -347,6 +349,16 @@ namespace FrostmourneGui {
                         int split = line.IndexOf('|');
                         if (split < 5) continue;
                         string path = Verify.Dec(line.Substring(split+1));
+                        string bundled = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.StartupPath, "FrostmourneBootstrap.dll"));
+                        // Earlier packages saved manual copies of the same bootstrap from other game folders.
+                        // Restore only the package-pinned bootstrap. Never promote or execute an unverified copy.
+                        if (String.Equals(System.IO.Path.GetFileName(path), "FrostmourneBootstrap.dll", StringComparison.OrdinalIgnoreCase) &&
+                            !String.Equals(System.IO.Path.GetFullPath(path), bundled, StringComparison.OrdinalIgnoreCase)) {
+                            migratedLegacyDll = true;
+                            Write("MIGRACJA: pominieto zapisany zewnetrzny duplikat FrostmourneBootstrap.dll: " + path +
+                                  "; uzywana jest tylko DLL z katalogu loadera i jej manifest SHA256.");
+                            continue;
+                        }
                         if (!selected.Exists(m => String.Equals(m.Path, path, StringComparison.OrdinalIgnoreCase)))
                             selected.Add(new Module { Path = path, Enabled = line.Substring(4,1) == "1" });
                     }
