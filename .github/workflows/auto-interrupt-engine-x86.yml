@@ -1,0 +1,43 @@
+name: auto-interrupt-engine-x86
+on:
+  push:
+    branches: [work]
+    paths:
+      - 'src/auto_interrupt/**'
+      - 'tests/auto_interrupt_native.c'
+      - 'docs/AUTO_INTERRUPT.md'
+      - '.github/workflows/auto-interrupt-engine-x86.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decision-engine:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact target and unchanged stable runtime
+        shell: cmd
+        run: |
+          python tools/verify_reference_client.py --path reference/client/Wow.exe
+          if errorlevel 1 exit /b 1
+          python tools/verify_current.py
+          if errorlevel 1 exit /b 1
+          python tools/verify_repo.py
+          if errorlevel 1 exit /b 1
+      - name: Build and test isolated native engine for Windows x86
+        shell: cmd
+        run: |
+          for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set VSINSTALL=%%i
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x86 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          if not exist dist mkdir dist
+          cl /nologo /W4 /WX /O2 /Fe:dist\auto_interrupt_native.exe tests\auto_interrupt_native.c src\auto_interrupt\auto_interrupt.c
+          if errorlevel 1 exit /b 1
+          dist\auto_interrupt_native.exe
+          if errorlevel 1 exit /b 1
