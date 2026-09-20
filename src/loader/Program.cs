@@ -107,7 +107,7 @@ namespace FrostmourneGui {
             Label("KLIENT GRY", 24, 64, 950, 24, 12);
             exe.Location = new Point(24, 94); exe.Size = new Size(782, 26); exe.ReadOnly = true;
             exe.BackColor = Color.FromArgb(34,42,56); exe.ForeColor = Color.White; Controls.Add(exe);
-            Button("Wybierz Wow.exe", 816, 92, 205, 30, (s,e) => PickExe());
+            Button("Wybierz plik EXE", 816, 92, 205, 30, (s,e) => PickExe());
             Place(clientInfo, "Fingerprint: NIEZWERYFIKOWANY", 24, 129, 995, 24);
             Place(gameInfo, "Gra: NIEURUCHOMIONA", 24, 157, 650, 24);
             Place(pidInfo, "PID: --", 700, 157, 315, 24);
@@ -167,7 +167,7 @@ namespace FrostmourneGui {
         }
         void PickExe() {
             using (OpenFileDialog d = new OpenFileDialog()) {
-                d.Filter = "Wow.exe|Wow.exe|Programy EXE|*.exe"; d.CheckFileExists = true;
+                d.Filter = "Programy EXE|*.exe|Wszystkie pliki|*.*"; d.CheckFileExists = true;
                 if (d.ShowDialog(this) == DialogResult.OK) {
                     exe.Text = d.FileName; verifiedExe = ""; verifiedHash = "";
                     clientInfo.Text = "Fingerprint: NIEZWERYFIKOWANY"; Save();
@@ -195,9 +195,9 @@ namespace FrostmourneGui {
         bool VerifyExe() {
             try {
                 string path = exe.Text;
-                if (!File.Exists(path)) throw new FileNotFoundException("Wybierz istniejacy Wow.exe");
-                if (!String.Equals(System.IO.Path.GetFileName(path), "Wow.exe", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Nazwa pliku musi byc Wow.exe");
+                if (!File.Exists(path)) throw new FileNotFoundException("Wybierz istniejacy plik EXE");
+                if (!String.Equals(System.IO.Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Wybrany plik musi miec rozszerzenie .exe");
                 Verify.Pe32(path, false);
                 if (new FileInfo(path).Length != Verify.ReferenceSize)
                     throw new InvalidDataException("Niezgodny rozmiar klienta (oczekiwane 7704216 B)");
