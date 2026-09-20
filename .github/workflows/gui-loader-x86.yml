@@ -7,19 +7,13 @@ on:
       - 'src/loader/**'
       - 'tools/package_universal_loader.py'
       - 'docs/UNIVERSAL_LOADER.md'
-      - 'src/bootstrap/bootstrap.c'
-      - 'src/bootstrap/bootstrap.h'
-      - 'src/auto_pickpocket/**'
-      - 'src/auto_interrupt/addon/**'
-      - 'src/auto_interrupt/kick_native_bridge.c'
-      - 'docs/AUTO_INTERRUPT.md'
       - 'tools/package_gui_loader.py'
       - 'docs/GUI_LOADER_TEST.md'
       - '.github/workflows/gui-loader-x86.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   gui-launcher-windows-x86:
@@ -60,7 +54,7 @@ jobs:
       - name: Compile WinForms GUI x86 release and debug
         shell: cmd
         run: |
-          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /optimize+ /out:dist\FrostmourneGui.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs src\loader\ModuleCatalog.cs src\loader\ModuleOptionsDialog.cs
+          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /optimize+ /out:dist\FrostmourneGui.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs src\loader\ModuleCatalog.cs src\loader\ModuleOptionsDialog.cs src\loader\UpdateClient.cs
           if errorlevel 1 exit /b 1
           "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /debug:full /define:DEBUG /out:dist\FrostmourneGuiDebug.exe /pdb:dist\FrostmourneGuiDebug.pdb /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs src\loader\ModuleCatalog.cs src\loader\ModuleOptionsDialog.cs
           if errorlevel 1 exit /b 1
@@ -79,6 +73,11 @@ jobs:
           dist\FrostmourneGui.exe --self-test
           if errorlevel 1 exit /b 1
           dist\FrostmourneGuiDebug.exe --self-test
+          if errorlevel 1 exit /b 1
+      - name: Test manifest, invalid ABI and unsafe ZIP path rejection
+        shell: cmd
+        run: |
+          dist\FrostmourneGui.exe --updater-self-test
           if errorlevel 1 exit /b 1
       - name: Prepare standalone DLL with alternative descriptive name
         shell: cmd
@@ -110,3 +109,11 @@ jobs:
           name: Frostmourne_Modules_x86
           path: dist/Frostmourne_Modules_x86.zip
           if-no-files-found: error
+
+      - name: Publish complete first-test loader ZIP as commit-pinned prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "work-loader-${{ github.sha }}"
+          gh release create $tag dist/frostmourne-gui-loader-x86.zip --target "${{ github.sha }}" --title "Frostmourne universal loader ${{ github.sha }}" --notes "Experimental Windows x86 loader + bootstrap DLL + Lua addon. Gameplay unverified." --prerelease
