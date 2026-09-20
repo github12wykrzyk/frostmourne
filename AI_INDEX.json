@@ -44,6 +44,16 @@
       "status": "experimental-core-only",
       "distribution": "source and no-game CI tests; no gameplay DLL or ZIP",
       "active_runtime": false
+    },
+    {
+      "id": "auto-interrupt",
+      "source": "src/auto_interrupt",
+      "docs": "docs/AUTO_INTERRUPT.md",
+      "platform": "Windows x86",
+      "status": "experimental-decision-engine-only",
+      "distribution": null,
+      "active_runtime": false,
+      "client_adapter_verified": false
     }
   ],
   "tools": [
@@ -76,6 +86,11 @@
       "id": "package_gui_loader",
       "path": "tools/package_gui_loader.py",
       "purpose": "Verify native x86 bootstrap ABI, managed x86 GUI, SHA256 pin and isolated GUI loader ZIP."
+    },
+    {
+      "id": "audit_interrupt_addresses",
+      "path": "tools/audit_interrupt_addresses.py",
+      "purpose": "Read-only candidate-address disassembly against the exact registered 12340 x86 image."
     }
   ],
   "docs": [
