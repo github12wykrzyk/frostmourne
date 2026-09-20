@@ -193,7 +193,7 @@ static FM_AP_CAST_RESULT fm_native_cast(void *ctx, uint64_t guid) {
 }
 
 static void fm_tick_on_window_thread(void) {
-    char answer[192], *parts[4] = {NULL, NULL, NULL, NULL};
+    char answer[192], banner[64], *parts[4] = {NULL, NULL, NULL, NULL};
     char *context = NULL, *item;
     uint64_t player, target;
     unsigned long area;
@@ -245,7 +245,7 @@ static void fm_tick_on_window_thread(void) {
         fm_log("event=ADAPTER_READY adapter=WINDOW_THREAD selected_target_only=1 auto_enabled=1");
         /* Message is printed only after a successful in-game snapshot. */
         (void)fm_lua_query("DEFAULT_CHAT_FRAME:AddMessage('FROSTMOURNE Auto Pickpocket: ACTIVE') return 'OK'",
-                           answer, sizeof(answer));
+                           banner, sizeof(banner));
     }
     if (g_last_pending && g_engine->pending_guid == 0) {
         fm_log("event=PICKPOCKET_RESULT outcome=UNKNOWN reason=no_correlated_server_loot_event");
