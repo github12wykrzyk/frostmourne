@@ -3,6 +3,33 @@
 Target: the exact registered WoW 3.3.5a build 12340 x86 client, SHA256 `edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd`.
 
 
+## Auto Interrupt — opt-in native Kick trial (experimental, unconfirmed)
+
+The optional **AUTO KICK - EKSPERYMENT** checkbox in the launcher is a separate,
+opt-in experimental native action test, not a stable gameplay feature. When checked,
+the launcher writes `local kickRequests = true` into the addon copy installed
+beside the game EXE before launch and enables the native action hook in the
+fingerprint-verified process. Close the previous game instance first: changing the
+launcher checkbox cannot change an addon or DLL already loaded into WoW.
+The in-game indicator should say `AUTO KICK TRIAL - NIEPOTWIERDZONE`,
+not `AUTO KICK OFF`, when the opt-in addon is active.
+
+In the game, select an enemy actively casting an interruptible spell with a
+Rogue who knows Kick and has sufficient energy, is in range and can act.
+Avoid manually pressing Kick during the trial so the combat log evidence is
+attributable to the experiment. The addon prints `KICK TRIAL: przekazano znacznik`
+when it sends the marker. The native log in
+`%LOCALAPPDATA%\\Frostmourne\\logs\\kick-<PID>.log` distinguishes
+`KICK_MARKER_RECEIVED`, `KICK_REJECTED_PRECHECK` and
+`KICK_REQUESTED_NOT_CONFIRMED`. Only `SPELL_INTERRUPT` from the actual
+player with spell ID 1766 in the WoW combat log establishes an interrupt
+happened. The addon prints `KICK: przerwanie POTWIERDZONE w COMBAT LOG`
+and notes whether target GUID and timing correlate with a previous request;
+the correlation alone does not prove the DLL caused the interrupt.
+Do not infer in-game success from CI or `hook_installed=1`.
+If the client crashes, stop this experiment and preserve loader/bootstrap/kick
+logs and the game crash report; do not keep restarting it.
+
 ## Auto Interrupt — first live diagnostic (NO automatic Kick)
 
 This package contains the pinned experimental bootstrap with read-only

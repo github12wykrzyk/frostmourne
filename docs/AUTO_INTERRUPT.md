@@ -40,3 +40,12 @@ No local gameplay test is requested for this non-game, isolated engine.
 The experimental GUI-loader package now includes a read-only in-process Lua-binding
 fingerprint probe and a separate non-communicating Lua addon for observing actual casts.
 See docs/GUI_LOADER_TEST.md. No live-unit DLL adapter or automatic Kick exists.
+
+## 2026-09-20 experimental action-trial status
+
+The independent bootstrap native Kick bridge (src/auto_interrupt/kick_native_bridge.c)
+provides an **opt-in** action request for the selected target only. It is not
+connected to the independent core engine above, and no gameplay confirmation has
+been received. See docs/GUI_LOADER_TEST.md for marker/precheck/request and
+SPELL_INTERRUPT evidence separation. In-game test is required; a verified hook
+and a DLL cast request do not prove a successful Kick. Do not promote to main.

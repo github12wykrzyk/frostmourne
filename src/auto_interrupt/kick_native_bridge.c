@@ -146,7 +146,9 @@ static int __cdecl kick_hook(void *lua) {
     /* Never execute game action recursively. An arbitrary addon cannot
      * request a Kick without a valid, fresh, independently checked cast. */
     if (InterlockedCompareExchange(&g_in_hook,1,0)==0) {
-        process_request(arg);
+        log_attempt("KICK_MARKER_RECEIVED",1766u,0,0,0);
+        if (!process_request(arg))
+            log_attempt("KICK_REJECTED_PRECHECK",1766u,0,0,0);
         InterlockedExchange(&g_in_hook,0);
     }
     return 0; /* Intentional no-return Lua diagnostics marker, not a unit. */

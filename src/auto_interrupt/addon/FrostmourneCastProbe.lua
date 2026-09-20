@@ -3,6 +3,8 @@
 local running = true -- Auto-start.
 local kickRequests = false -- Opt-in via pinned GUI only.
 local lastKickRequest = nil
+local lastTrial = nil
+local lastConfirmed = nil
 local frame = CreateFrame("Frame")
 local elapsed = 0
 local lastKey = ""
@@ -62,6 +64,8 @@ local function requestNativeKick()
     local token=guid..":"..tostring(starts)..":"..tostring(ends)
     if lastKickRequest==token then return end
     lastKickRequest=token
+    lastTrial = { guid=guid, when=GetTime(), token=token }
+    say("KICK TRIAL: przekazano znacznik do DLL; wynik akcji NIEPOTWIERDZONY; GUID="..guid)
     -- Marked UnitCastingInfo is intercepted only by the matching opt-in DLL.
     -- The marker requests an action; only actual combat logs can confirm Kick.
     UnitCastingInfo("FMKICK12340|"..guid.."|"..
@@ -88,7 +92,27 @@ end
 -- Print after chat exists. The visible banner remains if chat tabs hide messages.
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 frame:SetScript("OnEvent", function(self, event)
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        -- WoW 3.3.5a event payload is delivered as varargs (not CombatLogGetCurrentEventInfo).
+        local timestamp, subevent, hideCaster, sourceGUID, sourceName, sourceFlags,
+              destGUID, destName, destFlags, spellId, spellName, spellSchool,
+              extraSpellId, extraSpellName = ...
+        if kickRequests and subevent == "SPELL_INTERRUPT" and
+           sourceGUID == UnitGUID("player") and spellId == 1766 then
+            local correlated = lastTrial and destGUID == lastTrial.guid and
+                               GetTime() - lastTrial.when >= 0 and
+                               GetTime() - lastTrial.when <= 3
+            say("KICK: przerwanie POTWIERDZONE w COMBAT LOG; spell="..
+                tostring(extraSpellName or extraSpellId or "?")..
+                " target="..tostring(destName or destGUID or "?")..
+                (correlated and " [czas/GUID zgodne z testem DLL]" or
+                                " [nie przypisano do zadanego testu DLL]"))
+            lastConfirmed = GetTime()
+        end
+        return
+    end
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         running = true
         showIndicator()
@@ -126,12 +150,12 @@ SlashCmdList["FROSTMOURNECASTPROBE"] = function(msg)
     msg = string.lower((msg or ""):match("^%s*(.-)%s*$"))
     if msg == "on" then
         running = true; elapsed = 0; lastKey = ""; lastPrinted = 0
-        say("ON: read-only target/focus cast observations; Auto Kick is OFF.")
+        say("ON: monitoring castow; Auto Kick trial: "..(kickRequests and "wlaczony w loaderze" or "OFF")..".")
     elseif msg == "off" then
         running = false
         say("OFF")
     else
-        say("Status=" .. (running and "ON" or "OFF") .. " | /fmcast on | /fmcast off")
+        say("Status=" .. (running and "ON" or "OFF") .. " | Kick trial=" .. (kickRequests and "ON (niepotwierdzony)" or "OFF") .. " | /fmcast on | /fmcast off")
         if running then
             local text = sample("target")
             if text then say(text) else say("No current target cast.") end
