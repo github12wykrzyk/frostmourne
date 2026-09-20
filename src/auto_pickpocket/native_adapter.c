@@ -215,8 +215,8 @@ static int fm_scan_nearby(uint64_t player_guid, FM_AP_UNIT *out,
                           size_t capacity, size_t *count) {
     uint32_t connection, manager, first, cur, player_obj = 0;
     uint64_t manager_guid, object_guid;
-    uint32_t player_type, player_fields, player_faction;
-    float px, py, pz;
+    uint32_t player_type = 0, player_fields = 0, player_faction = 0;
+    float px = 0.0f, py = 0.0f, pz = 0.0f;
     unsigned pass, steps;
     *count = 0;
     if (!fm_safe_read(FM_CONN_VA, &connection, sizeof(connection)) ||
