@@ -25,7 +25,7 @@ __declspec(dllexport) DWORD WINAPI Frostmourne_Initialize(LPVOID packet);
 __declspec(dllexport) DWORD WINAPI Frostmourne_Shutdown(LPVOID unused);
 __declspec(dllexport) DWORD WINAPI Frostmourne_GetAbi(LPVOID unused);
 
-/* Diagnostic status only. 0x41500001 = AP core initialized, native game adapter ABSENT. */
+/* 0x41500002=bridge starting, 0x41500003=verified local ready, 0x41500004=bridge failed. */
 #define FM_AP_CORE_INERT 0x41500001u
 __declspec(dllexport) DWORD WINAPI Frostmourne_GetAutoPickpocketStatus(LPVOID unused);
 
