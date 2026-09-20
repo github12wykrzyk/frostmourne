@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Forms;
@@ -16,6 +17,9 @@ namespace FrostmourneGui {
         internal string Hash = "";
         internal string Version = "?";
         internal string Arch = "?";
+        internal string Id = "";
+        internal ModuleManifest Manifest;
+        internal readonly Dictionary<string,string> Options = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
     }
 
     internal static class Verify {
@@ -85,7 +89,11 @@ namespace FrostmourneGui {
             Restore();
             kickTrial.CheckedChanged += (s,e) => Save();
             kickWindow.ValueChanged += (s,e) => Save();
-            AddDefaultDll();
+            selected.RemoveAll(m => m.Manifest == null && !String.Equals(System.IO.Path.GetFullPath(m.Path), System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.StartupPath, "FrostmourneBootstrap.dll")), StringComparison.OrdinalIgnoreCase));
+            List<Module> discovered = ModuleCatalog.Discover(Write);
+            ModuleCatalog.Restore(discovered, Write);
+            if (discovered.Count == 0) AddDefaultDll();
+            else { selected.Clear(); selected.AddRange(discovered); }
             if (migratedLegacyDll) Save(); // Persist migration so stale bootstrap paths cannot block subsequent launches.
             RefreshModules();
             poll.Interval = 1000;
@@ -119,7 +127,7 @@ namespace FrostmourneGui {
             Place(pidInfo, "PID: --", 700, 157, 315, 24);
             Label("BIBLIOTEKI DLL", 24, 199, 750, 26, 12);
             Button("Dodaj DLL", 744, 195, 132, 30, (s,e) => PickDll());
-            Button("Usun zaznaczony", 884, 195, 137, 30, (s,e) => RemoveDll());
+            Button("Ustawienia modulu", 884, 195, 137, 30, (s,e) => ConfigureSelected());
             modules.Location = new Point(24, 230); modules.Size = new Size(997, 151);
             modules.View = View.Details; modules.FullRowSelect = true; modules.CheckBoxes = true;
             modules.GridLines = true; modules.HideSelection = false;
@@ -129,7 +137,9 @@ namespace FrostmourneGui {
             modules.Columns.Add("Weryfikacja / inicjalizacja", 365);
             modules.ItemChecked += (s,e) => {
                 if (!loading && e.Item.Tag is Module) {
-                    ((Module)e.Item.Tag).Enabled = e.Item.Checked;
+                    Module candidate = (Module)e.Item.Tag;
+                    if (candidate.Manifest == null || candidate.Status.StartsWith("ZWERYFIKOWANY") || candidate.Status.StartsWith("PASS")) candidate.Enabled = e.Item.Checked;
+                    else { candidate.Enabled = false; Write("BLOKADA wlaczenia " + candidate.Path + " " + candidate.Status); RefreshModules(); }
                     Save();
                 }
             };
@@ -201,6 +211,14 @@ namespace FrostmourneGui {
                 }
             }
         }
+        void ConfigureSelected() {
+            if (modules.SelectedItems.Count != 1) { Write("Wybierz jeden modul, aby edytowac ustawienia."); return; }
+            Module m = modules.SelectedItems[0].Tag as Module;
+            if (m == null || m.Manifest == null) { Write("Brak manifestu opcji dla wybranego modulu."); return; }
+            using (ModuleOptionsDialog dialog = new ModuleOptionsDialog(m)) {
+                if (dialog.ShowDialog(this) == DialogResult.OK) { Save(); RefreshModules(); }
+            }
+        }
         void RemoveDll() {
             if (modules.SelectedItems.Count == 0) return;
             Module m = modules.SelectedItems[0].Tag as Module;
@@ -238,17 +256,32 @@ namespace FrostmourneGui {
                     m.Arch = "x86";
                     m.Hash = Verify.Hash(m.Path);
                     m.Version = FileVersionInfo.GetVersionInfo(m.Path).FileVersion ?? "?";
-                    // Only the exact bundled DLL has an audited import/export and ABI contract.
-                    if (!String.Equals(System.IO.Path.GetFullPath(m.Path),
-                          System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.StartupPath, "FrostmourneBootstrap.dll")),
-                          StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException("Brak zatwierdzonego manifestu ABI/zaleznosci dla zewnetrznej DLL");
-                    if (pinnedHash.Length != 64 || m.Hash != pinnedHash || new FileInfo(m.Path).Length != pinnedSize)
-                        throw new InvalidDataException("DLL rozni sie od binarki z manifestu SHA256/rozmiar");
-                    m.Version = "0.1.0-test1 / ABI 1.0";
+                    if (m.Manifest == null) {
+                        if (!String.Equals(System.IO.Path.GetFullPath(m.Path),
+                              System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.StartupPath, "FrostmourneBootstrap.dll")),
+                              StringComparison.OrdinalIgnoreCase) || pinnedHash.Length != 64 ||
+                            m.Hash != pinnedHash || new FileInfo(m.Path).Length != pinnedSize)
+                            throw new InvalidDataException("Legacy DLL rozni sie od przypietej binarki");
+                        m.Version = "0.1.0-legacy / ABI 1.0";
+                    } else {
+                        if (!String.Equals(m.Hash, m.Manifest.sha256, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException("SHA256 niezgodne z manifestem modulu " + m.Id);
+                        if (m.Manifest.abi_major != 1 || m.Manifest.abi_minor != 0 ||
+                            m.Manifest.client_sha256 != Verify.ReferenceSha || m.Manifest.architecture != "x86")
+                            throw new InvalidDataException("Niezgodny manifest ABI lub klienta " + m.Id);
+                        foreach (ModuleAsset asset in m.Manifest.assets ?? new ModuleAsset[0]) {
+                            string assetFile = System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(m.Path), asset.path));
+                            if (!File.Exists(assetFile) || !String.Equals(Verify.Hash(assetFile), asset.sha256, StringComparison.OrdinalIgnoreCase))
+                                throw new InvalidDataException("Brak lub niezgodny plik dodatkowy " + asset.path);
+                        }
+                    }
                     m.Status = "PASS integralnosc; LOAD: NIEPRZETESTOWANE";
                     Write("PASS DLL " + m.Path + " hash=" + m.Hash + " abi=1.0; load=not-tested");
                 } catch(Exception ex) { m.Status = "FAIL: " + ex.Message; ok = false; Write("FAIL DLL " + m.Path + ": " + ex); }
+            }
+            if (ok && selected.Exists(m => m.Enabled && m.Manifest != null)) {
+                try { ModuleCatalog.Order(selected); }
+                catch (Exception e) { Write("FAIL zaleznosci: " + e.Message); ok = false; }
             }
             RefreshModules();
             dllInfo.Text = ok ? "DLL: zweryfikowane na dysku; wewnatrz Wow.exe: NIEPRZETESTOWANE"
@@ -260,7 +293,7 @@ namespace FrostmourneGui {
             try {
                 modules.Items.Clear();
                 foreach(Module m in selected) {
-                    ListViewItem i = new ListViewItem(System.IO.Path.GetFileName(m.Path));
+                    ListViewItem i = new ListViewItem(m.Manifest == null ? System.IO.Path.GetFileName(m.Path) : m.Id);
                     i.SubItems.Add(m.Version); i.SubItems.Add(m.Arch); i.SubItems.Add(m.Hash); i.SubItems.Add(m.Status);
                     i.Tag = m; i.Checked = m.Enabled; modules.Items.Add(i);
                 }
@@ -333,7 +366,9 @@ namespace FrostmourneGui {
                 // Place the official read-only addon in the game AddOns directory BEFORE launch.
                 // This only happens after strict EXE and packaged-DLL checks.
                 try {
-                    InstallCastProbeAddon();
+                    if (selected.Exists(m => m.Enabled && m.Manifest == null)) InstallCastProbeAddon();
+                    foreach (Module m in selected.FindAll(x => x.Enabled && x.Manifest != null))
+                        ModuleCatalog.InstallAssets(m, System.IO.Path.GetDirectoryName(verifiedExe), Write);
                 } catch (Exception addonError) {
                     gameInfo.Text = "Gra: NIEURUCHOMIONA - instalacja dodatku FAIL";
                     resultInfo.Text = "ADDON FAIL: " + addonError.Message;
@@ -357,33 +392,39 @@ namespace FrostmourneGui {
                 Write("ETAP weryfikacja_DLL=" + (selected.Exists(m => m.Enabled) ? "PASS dyskowy_pin_sha256=" + pinnedHash : "POMINIETA wszystkie_DLL_wylaczone") + " pid=" + game.Id);
                 Write("ETAP uruchomienie_gry=PASS pid=" + game.Id);
                 Write("ETAP mechanizm_rozszerzen=STANDARDOWE_WIN32_LOADLIBRARY pid=" + game.Id);
-                Module bootstrap = selected.Find(m => m.Enabled);
-                if (bootstrap == null) {
-                    resultInfo.Text = "DLL: WYLACZONA; GRA URUCHOMIONA";
-                    Write("ETAP zaladowanie_DLL=NIEPRZETESTOWANE przyczyna=wylaczona pid=" + game.Id);
+                List<Module> ordered = selected.Exists(m => m.Enabled && m.Manifest != null)
+                    ? ModuleCatalog.Order(selected) : selected.FindAll(m => m.Enabled);
+                if (ordered.Count == 0) {
+                    resultInfo.Text = "DLL: WYLACZONE; GRA URUCHOMIONA";
+                    Write("ETAP zaladowanie_DLL=NIEPRZETESTOWANE przyczyna=wylaczone pid=" + game.Id);
                 } else {
-                    try {
-                        // The only enabled module may be the package-pinned bootstrap (VerifyDlls).
-                        if (Verify.Hash(bootstrap.Path) != pinnedHash ||
-                            Verify.Hash(verifiedExe) != verifiedHash)
-                            throw new InvalidDataException("Plik zmienil sie pomiedzy weryfikacja a probą ladowania");
-                        string outcome = RemoteBootstrap.LoadAndInitialize(game, verifiedExe, bootstrap.Path,
-                            kickTrial.Checked, (uint)kickWindow.Value, Write);
-                        dllState = "PASS";
-                        bootstrap.Status = "PASS: zaladowana i zainicjalizowana w PID " + game.Id;
-                        resultInfo.Text = outcome;
-                        dllInfo.Text = "DLL: PASS (adresy) | Addon: SKOPIOWANY, status w grze NIEZNANY | Auto Kick OFF";
-                        Write("ETAP test_inprocess=PASS pid=" + game.Id + " sha256=" + bootstrap.Hash);
-                    } catch (Exception ex) {
-                        dllState = "FAIL";
-                        bootstrap.Status = "FAIL in-process: " + ex.Message;
-                        resultInfo.Text = "DLL W WOW: FAIL (gra pozostaje uruchomiona)";
-                        dllInfo.Text = "DLL w procesie Wow.exe: FAIL / sprawdz log";
-                        Win32Exception win = ex as Win32Exception;
-                        Write("ETAP test_inprocess=FAIL pid=" + game.Id +
-                              " win32=" + (win == null ? "NIE_DOTYCZY" : win.NativeErrorCode.ToString()) +
-                              " message=" + ex);
-                    } finally { RefreshModules(); }
+                    bool allLoaded = true;
+                    foreach (Module module in ordered) {
+                        try {
+                            if (Verify.Hash(module.Path) != module.Hash ||
+                                Verify.Hash(verifiedExe) != verifiedHash)
+                                throw new InvalidDataException("EXE/DLL zmienione po weryfikacji");
+                            string outcome = module.Manifest == null
+                                ? RemoteBootstrap.LoadAndInitialize(game, verifiedExe, module.Path,
+                                    kickTrial.Checked, (uint)kickWindow.Value, Write)
+                                : RemoteBootstrap.LoadGeneric(game, verifiedExe, module.Path,
+                                    module.Manifest, module.Options, Write);
+                            module.Status = "ZALADOWANY I ZAINICJALIZOWANY w PID " + game.Id +
+                                            "; gameplay NIEPOTWIERDZONY";
+                            Write("MODULE " + (module.Manifest == null ? "legacy" : module.Id) + " " + outcome);
+                        } catch (Exception err) {
+                            module.Status = "FAIL in-process: " + err.Message;
+                            allLoaded = false;
+                            Write("MODULE FAIL " + (module.Manifest == null ? "legacy" : module.Id) + " " + err);
+                            break; // Do not load dependants after one failed dependency.
+                        } finally { RefreshModules(); }
+                    }
+                    dllState = allLoaded ? "PASS" : "FAIL";
+                    resultInfo.Text = allLoaded
+                        ? "DLL: IN_PROCESS_TESTED " + ordered.Count + " | GAMEPLAY NIEPOTWIERDZONY"
+                        : "DLL: FAIL / sprawdz logi (gra pozostaje uruchomiona)";
+                    dllInfo.Text = "DLL: " + (allLoaded ? "IN_PROCESS_TESTED" : "FAIL") +
+                                   " | liczba=" + ordered.Count + " | gameplay: NIEPOTWIERDZONY";
                 }
             } catch(Win32Exception ex) {
                 gameInfo.Text = "Gra: FAIL CreateProcess Win32=" + ex.NativeErrorCode;
@@ -410,11 +451,12 @@ namespace FrostmourneGui {
                 b.AppendLine("schema=1"); b.AppendLine("exe=" + Verify.Enc(exe.Text));
                 b.AppendLine("kicktrial=" + (kickTrial.Checked ? "1" : "0"));
                 b.AppendLine("kickwindow=" + ((int)kickWindow.Value).ToString());
-                foreach(Module m in selected) b.AppendLine("dll=" + (m.Enabled ? "1" : "0") + "|" + Verify.Enc(m.Path));
+                foreach(Module m in selected.Where(m => m.Manifest == null)) b.AppendLine("dll=" + (m.Enabled ? "1" : "0") + "|" + Verify.Enc(m.Path));
                 string tmp = settings + ".tmp";
                 File.WriteAllText(tmp, b.ToString(), Encoding.UTF8);
                 if (File.Exists(settings)) File.Replace(tmp, settings, null);
                 else File.Move(tmp, settings);
+                ModuleCatalog.Save(selected);
             } catch(Exception ex) { Write("FAIL zapis ustawien: " + ex.Message); }
         }
         void Restore() {
