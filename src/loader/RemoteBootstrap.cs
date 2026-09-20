@@ -273,5 +273,106 @@ namespace FrostmourneGui {
                 CloseHandle(process);
             }
         }
+
+        // Shared ABI 1.0 path; exports are specified in module.json, not inferred from a DLL name.
+        // Windows remote threads are never retried after a timeout (unknown in-process state).
+        internal static string LoadGeneric(Process target, string expectedExe, string dll,
+                 ModuleManifest manifest, System.Collections.Generic.Dictionary<string,string> options,
+                 Action<string> log) {
+            if (IntPtr.Size != 4) throw new InvalidOperationException("Loader must run as x86");
+            if (target.HasExited || !String.Equals(Path.GetFullPath(target.MainModule.FileName),
+                Path.GetFullPath(expectedExe), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Client process identity mismatch");
+            if (manifest.abi_major != 1 || manifest.abi_minor != 0 ||
+                manifest.client_sha256 != Verify.ReferenceSha)
+                throw new InvalidDataException("Unsupported module ABI/client");
+            if (!String.Equals(Verify.Hash(dll), manifest.sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("DLL changed before LoadLibraryW");
+            uint initRva = ExportRva(dll, manifest.init_export);
+            uint abiRva = ExportRva(dll, manifest.abi_export);
+            uint optionsRva = 0;
+            if (manifest.options != null && manifest.options.Length != 0)
+                optionsRva = ExportRva(dll, manifest.option_export);
+            IntPtr loadLibrary = RemoteOsFunction(target, "LoadLibraryW");
+            IntPtr process = OpenProcess(Access, false, (uint)target.Id);
+            if (process == IntPtr.Zero) throw Win32("OpenProcess " + target.Id);
+            IntPtr pathPointer = IntPtr.Zero, packetPointer = IntPtr.Zero, optionPointer = IntPtr.Zero;
+            bool pathSafe = true, packetSafe = true, optionSafe = true;
+            try {
+                byte[] pathData = Encoding.Unicode.GetBytes(Path.GetFullPath(dll) + "\0");
+                pathPointer = Allocate(process, pathData.Length, "module DLL path");
+                Write(process, pathPointer, pathData, "module DLL path");
+                uint baseAddress;
+                try {
+                    baseAddress = Invoke(process, loadLibrary, pathPointer, "module LoadLibraryW", log);
+                } catch (TimeoutException) { pathSafe = false; throw; }
+                if (baseAddress == 0) throw new InvalidOperationException("LoadLibraryW returned NULL: " + manifest.id);
+                bool matched = false;
+                using (Process inspect = Process.GetProcessById(target.Id)) {
+                    foreach (ProcessModule loaded in inspect.Modules)
+                        if (Address(loaded.BaseAddress) == baseAddress &&
+                            String.Equals(Path.GetFullPath(loaded.FileName), Path.GetFullPath(dll),
+                            StringComparison.OrdinalIgnoreCase)) matched = true;
+                }
+                if (!matched) throw new InvalidOperationException("Loaded module path/base mismatch " + manifest.id);
+                log("MODULE " + manifest.id + " LOADED pid=" + target.Id);
+                uint abi = Invoke(process, Ptr(checked(baseAddress + abiRva)), IntPtr.Zero, "module GetAbi", log);
+                if (abi != Abi) throw new InvalidDataException("Module ABI mismatch " + manifest.id);
+                byte[] packet = new byte[32];
+                Buffer.BlockCopy(BitConverter.GetBytes((uint)32),0,packet,0,4);
+                Buffer.BlockCopy(BitConverter.GetBytes((uint)1),0,packet,4,4);
+                Buffer.BlockCopy(BitConverter.GetBytes(Nonce),0,packet,8,4);
+                Buffer.BlockCopy(BitConverter.GetBytes((uint)target.Id),0,packet,12,4);
+                packetPointer = Allocate(process, packet.Length, "generic init");
+                Write(process, packetPointer, packet, "generic init");
+                uint result;
+                try {
+                    result = Invoke(process, Ptr(checked(baseAddress + initRva)), packetPointer, "module Initialize", log);
+                } catch (TimeoutException) { packetSafe = false; throw; }
+                byte[] answer = Read(process, packetPointer, packet.Length, "generic init answer");
+                if (result != Magic || BitConverter.ToUInt32(answer,16) != Magic ||
+                    BitConverter.ToUInt32(answer,20) != 0 ||
+                    BitConverter.ToUInt32(answer,24) != (uint)target.Id)
+                    throw new InvalidOperationException("Module init packet/PID invalid " + manifest.id);
+                log("MODULE " + manifest.id + " INITIALIZED pid=" + target.Id);
+                foreach (ModuleOption spec in manifest.options ?? new ModuleOption[0]) {
+                    string value;
+                    if (!options.TryGetValue(spec.key,out value)) value = spec.default_value;
+                    ModuleCatalog.ValidateOption(spec,value);
+                    byte[] key = Encoding.UTF8.GetBytes(spec.key), data = Encoding.UTF8.GetBytes(value);
+                    if (key.Length > 63 || data.Length > 127)
+                        throw new InvalidDataException("Module option exceeds ABI wire size " + spec.key);
+                    // FM_OPTION_PACKET: DWORD size,pid; char key[64],value[128];
+                    // DWORD result, win32_error, observed_pid. Return 0xF1057A01 on success.
+                    byte[] optionPacket = new byte[212];
+                    Buffer.BlockCopy(BitConverter.GetBytes((uint)212),0,optionPacket,0,4);
+                    Buffer.BlockCopy(BitConverter.GetBytes((uint)target.Id),0,optionPacket,4,4);
+                    Buffer.BlockCopy(key,0,optionPacket,8,key.Length);
+                    Buffer.BlockCopy(data,0,optionPacket,72,data.Length);
+                    optionPointer = Allocate(process, optionPacket.Length, "module option");
+                    Write(process, optionPointer, optionPacket, "module option");
+                    uint optionResult;
+                    try {
+                        optionResult = Invoke(process, Ptr(checked(baseAddress + optionsRva)),
+                            optionPointer, "module SetOption " + spec.key, log);
+                    } catch (TimeoutException) { optionSafe = false; throw; }
+                    byte[] observed = Read(process, optionPointer, optionPacket.Length, "module option reply");
+                    if (optionResult != Magic || BitConverter.ToUInt32(observed,200) != Magic ||
+                        BitConverter.ToUInt32(observed,204) != 0 ||
+                        BitConverter.ToUInt32(observed,208) != (uint)target.Id)
+                        throw new InvalidOperationException("Module option rejected " + manifest.id + "/" + spec.key);
+                    if (optionSafe) VirtualFreeEx(process, optionPointer, UIntPtr.Zero, MemRelease);
+                    optionPointer = IntPtr.Zero;
+                    log("MODULE " + manifest.id + " configured " + spec.key);
+                }
+                return "IN_PROCESS_TESTED id=" + manifest.id + " pid=" + target.Id +
+                    " gameplay=NOT_VERIFIED";
+            } finally {
+                if (optionPointer != IntPtr.Zero && optionSafe) VirtualFreeEx(process,optionPointer,UIntPtr.Zero,MemRelease);
+                if (packetPointer != IntPtr.Zero && packetSafe) VirtualFreeEx(process,packetPointer,UIntPtr.Zero,MemRelease);
+                if (pathPointer != IntPtr.Zero && pathSafe) VirtualFreeEx(process,pathPointer,UIntPtr.Zero,MemRelease);
+                CloseHandle(process);
+            }
+        }
     }
 }
