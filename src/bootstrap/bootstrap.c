@@ -5,6 +5,7 @@
 #include <string.h>
 #include "bootstrap.h"
 #include "../auto_pickpocket/auto_pickpocket.h"
+#include "../auto_pickpocket/native_adapter.h"
 
 #ifndef FM_VERSION
 #define FM_VERSION L"0.1.0-test1"
@@ -17,7 +18,7 @@
 static volatile LONG g_state = 0; /* 0=attached, 1=initializing, 2=initialized, 3=stopped */
 static DWORD g_pid = 0;
 static FILETIME g_attached_at;
-static FM_AP_ENGINE g_auto_pickpocket; /* Core is inert: no game adapter or spell callback. */
+static FM_AP_ENGINE g_auto_pickpocket; /* Native bridge starts separately after ABI initialization. */
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
     (void)reserved;
@@ -47,7 +48,7 @@ static DWORD write_diagnostic(DWORD elapsed_ms) {
     if (!CreateDirectoryW(sub, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return GetLastError();
     if (swprintf_s(file, MAX_PATH, L"%ls\\bootstrap-%lu.log", sub, (unsigned long)g_pid) < 0) return ERROR_BUFFER_OVERFLOW;
     GetSystemTime(&now);
-    if (swprintf_s(line, sizeof(line)/sizeof(line[0]), L"%04u-%02u-%02uT%02u:%02u:%02uZ event=INITIALIZED module=FrostmourneBootstrap version=%ls build=%ls abi=%lu.%lu pid=%lu attach_filetime=%08lx%08lx initialization_ms=%lu auto_pickpocket_core=READY adapter=ABSENT gameplay_actions=DISABLED\r\n",
+    if (swprintf_s(line, sizeof(line)/sizeof(line[0]), L"%04u-%02u-%02uT%02u:%02u:%02uZ event=INITIALIZED module=FrostmourneBootstrap version=%ls build=%ls abi=%lu.%lu pid=%lu attach_filetime=%08lx%08lx initialization_ms=%lu auto_pickpocket_core=READY adapter=INITIALIZING gameplay_actions=PENDING\r\n",
         now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, FM_VERSION, FM_BUILD_FLAVOR,
         (unsigned long)FM_ABI_MAJOR, (unsigned long)FM_ABI_MINOR, (unsigned long)g_pid,
         (unsigned long)g_attached_at.dwHighDateTime, (unsigned long)g_attached_at.dwLowDateTime,
@@ -86,7 +87,7 @@ DWORD WINAPI Frostmourne_Initialize(LPVOID data) {
         return FM_INIT_ERROR;
     }
     start = GetTickCount();
-    fm_ap_init(&g_auto_pickpocket); /* No native game pointers, hooks, or callbacks. */
+    fm_ap_init(&g_auto_pickpocket); /* Native adapter starts after packet/ABI validation. */
     error = write_diagnostic(GetTickCount() - start);
     packet->elapsed_ms = GetTickCount() - start;
     if (error != ERROR_SUCCESS) {
@@ -97,23 +98,28 @@ DWORD WINAPI Frostmourne_Initialize(LPVOID data) {
     packet->win32_error = ERROR_SUCCESS;
     packet->result = FM_INIT_MAGIC;
     InterlockedExchange(&g_state, 2);
+    if (!fm_ap_native_start(&g_auto_pickpocket)) {
+        packet->result = FM_INIT_ERROR;
+        packet->win32_error = ERROR_NOT_ENOUGH_MEMORY;
+        InterlockedExchange(&g_state, 0);
+        return FM_INIT_ERROR;
+    }
     return FM_INIT_MAGIC;
 }
 
 DWORD WINAPI Frostmourne_Shutdown(LPVOID unused) {
     (void)unused;
     if (InterlockedCompareExchange(&g_state, 3, 2) != 2) return FM_INIT_ERROR;
+    fm_ap_native_stop();
     return FM_INIT_MAGIC;
 }
 
-/* Do not return a gameplay-ready status until an EXACT-client verified adapter exists. */
+/* STARTING is not gameplay-ready. READY means a live in-game snapshot
+ * and native cast entry gate passed; it does not confirm successful loot. */
 DWORD WINAPI Frostmourne_GetAutoPickpocketStatus(LPVOID unused) {
     (void)unused;
     if (InterlockedCompareExchange(&g_state, 2, 2) != 2) return 0;
-    if (g_auto_pickpocket.config.enabled || g_auto_pickpocket.history_count ||
-        !g_auto_pickpocket.config.require_stealth || !g_auto_pickpocket.config.block_combat)
-        return 0;
-    return FM_AP_CORE_INERT;
+    return fm_ap_native_status();
 }
 
 /* No execution of private WoW functions: only 8-byte registration entries and
