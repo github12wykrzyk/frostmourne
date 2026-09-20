@@ -5,14 +5,14 @@
   "packages": [
     {
       "id": "frostmourne-bootstrap",
-      "version": "0.1.0-work.b42b7c035a18",
-      "sha256": "a02e32b480d5e9b44e008549fb2fdbdd5eec7319a9d049cb61129e3f35a615db",
-      "size_bytes": 84554,
+      "version": "0.1.0-work.f58556a0732c",
+      "sha256": "3680195f4ae79093253d351cd81eec99074ba30ed8d67da620444d9aaa20502f",
+      "size_bytes": 84770,
       "client_sha256": "edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd",
       "architecture": "x86",
       "abi_major": 1,
       "abi_minor": 0,
-      "url": "https://github.com/github12wykrzyk/frostmourne/releases/download/work-modules-b42b7c035a180d2c4bee75aee29bd70b3492d805/Frostmourne_Modules_x86.zip"
+      "url": "https://github.com/github12wykrzyk/frostmourne/releases/download/work-modules-f58556a0732c155ec69d634c3bcaf04656a8eb91/Frostmourne_Modules_x86.zip"
     }
   ]
 }
