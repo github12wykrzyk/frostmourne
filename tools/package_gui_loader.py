@@ -102,8 +102,12 @@ def main() -> int:
             name = "FrostmourneCastProbe/" + addon_name
             payloads[name] = addon_data
             files[name] = {"sha256": sha(addon_data), "size_bytes": len(addon_data)}
-        if b'say("Addon LOADED.' not in payloads["FrostmourneCastProbe/FrostmourneCastProbe.lua"]:
-            raise ValueError("addon does not announce successful Lua load in game")
+        addon_lua = payloads["FrostmourneCastProbe/FrostmourneCastProbe.lua"]
+        for marker in (b"local running = true", b'frame:RegisterEvent("PLAYER_ENTERING_WORLD")',
+                       b'event == "PLAYER_ENTERING_WORLD"', b"ADDON ZALADOWANY W GRZE",
+                       b"Auto Kick OFF"):
+            if marker not in addon_lua:
+                raise ValueError("addon does not auto-start/announce load in game: " + marker.decode("ascii"))
 
         for optional in ("FrostmourneGuiDebug.pdb", "FrostmourneBootstrapDebug.pdb"):
             q = DIST / optional

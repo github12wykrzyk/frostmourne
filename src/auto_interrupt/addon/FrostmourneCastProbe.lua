@@ -1,7 +1,8 @@
 -- FROSTMOURNE / WoW 3.3.5a. This addon observes only official Lua API results.
 -- It neither communicates with the DLL nor casts spells or changes targets.
-local running = false
+local running = true -- Active by default; no slash command required.
 local frame = CreateFrame("Frame")
+local announced = false
 local elapsed = 0
 local lastKey = ""
 local lastPrinted = 0
@@ -25,6 +26,16 @@ local function sample(unit)
         " remaining_ms=" .. tostring(ms) .. " interruptible=" .. kickable,
         guid .. ":" .. tostring(starts) .. ":" .. tostring(ends) .. ":" .. mode
 end
+-- Confirm addon activation only AFTER entering the world: DLL load is checked by the GUI,
+-- and must not be inferred from this independent Lua addon message.
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_ENTERING_WORLD" and not announced then
+        announced = true
+        running = true
+        say("ADDON ZALADOWANY W GRZE: monitoring castow AKTYWNY automatycznie. Auto Kick OFF; potwierdzenie DLL sprawdz w loaderze.")
+    end
+end)
 frame:SetScript("OnUpdate", function(self, dt)
     if not running then return end
     elapsed = elapsed + dt
@@ -63,4 +74,4 @@ SlashCmdList["FROSTMOURNECASTPROBE"] = function(msg)
 end
 
 -- This message confirms addon initialization; a DLL binding PASS alone does not.
-say("Addon LOADED. Uzyj /fmcast on (lub /fmprobe on). Auto Kick pozostaje OFF.")
+-- The in-game confirmation is sent by PLAYER_ENTERING_WORLD, not during file execution.

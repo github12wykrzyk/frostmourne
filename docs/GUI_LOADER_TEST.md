@@ -27,12 +27,14 @@ or the exact failure. Older installations of this specific addon are backed
 up before replacement; files not identifiable as our addon are never replaced.
 The loader DLL on its own does NOT register the slash command.
 
-After logging in, the chat must print `FM Cast Probe Addon LOADED`. This
-confirms that WoW has loaded the Lua addon; the loader's
-`CAST BINDINGS=PASS` confirms a separate read-only DLL binding check only.
-Type `/fmcast on` (alternative `/fmprobe on`) and select an enemy casting
-a spell. Observe GUID, spell name, remaining time, interruptible flag and
-cast/channel status. `/fmcast off` stops updates. No Kick is attempted.
+On first entry into the game world, the addon **starts automatically** and chat prints
+`FM Cast Probe ADDON ZALADOWANY W GRZE: monitoring castow AKTYWNY automatycznie`.
+This is evidence of the Lua addon starting, **not** evidence of successful DLL loading.
+The GUI's `CAST BINDINGS=PASS` separately confirms the read-only DLL binding check.
+No slash command is required. Select a casting enemy: the addon automatically shows
+GUID, spell name, remaining time, interruptibility and cast/channel status.
+Optional `/fmcast off` disables observations, `/fmcast on` re-enables them.
+The addon sends its startup message once per login/UI reload; automatic Kick is OFF.
 If the chat does not print `Addon LOADED`, inspect WoW's AddOns list at
 character selection; enable FrostmourneCastProbe. If a game instance was
 already open before installation, fully restart the game through the new loader.
