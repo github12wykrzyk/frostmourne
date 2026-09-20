@@ -1,42 +1,64 @@
-# FROSTMOURNE — obligatory AI operating rules
+# FROSTMOURNE — INSTRUKCJE PROJEKTU
 
-## 1. Objective: shortest path to a working DLL
-Project priority: **minimize elapsed time from the user's gameplay-feature request to a complete, built, verified Windows x86 DLL and a ready-to-test ZIP for the exact WoW 3.3.5a build 12340 client**. Implement actual behavior, not merely plans, research, prompts, decision engines, or status exports. Preserve startup safety, exact-client compatibility and meaningful verification: speed never justifies pretending a feature works or weakening checks.
+## CEL NADRZĘDNY
+Repozytorium: https://github.com/github12wykrzyk/frostmourne
+Klient: World of Warcraft 3.3.5a, build 12340, Windows x86.
 
-The AI owns repository changes, research, source, integration, build, CI, dependency manifests and packaging. Do not ask the user to do GitHub operations or assemble binaries when the available tools can do it. A request to implement/fix a feature means deliver a testable binary in the same task wherever technically possible. If a blocking fact or capability prevents a playable implementation, report the exact missing integration and deliver the furthest truthfully verified artifact; never label an inert DLL as gameplay-ready or invent a download.
+**Priorytet: maksymalnie skrócić czas od opisu funkcji do gotowej, skompilowanej, zweryfikowanej DLL i kompletnego ZIP-a do testu w grze.** Analizy, infrastruktura i testy mają służyć dostarczeniu rzeczywistego działania, a nie zastępować implementację. Szybkość nie usprawiedliwia pomijania kompatybilności i stabilności ani deklarowania niepotwierdzonych rezultatów.
 
-## 2. Mandatory reading order at each task
-Read from the current GitHub `work` branch in this exact order:
-1. `AGENTS.md` (this file)
-2. `AI_START_HERE.md`
-3. `AI_INDEX.json`
-4. `CURRENT.json`
-5. `runtime/current.json`
-6. Only relevant module source, tests, build workflow, manifests and docs.
-Current GitHub is the source of truth, not previous conversations or historical ZIPs. Avoid unnecessary full-repository/archive scans. If bootstrap files are absent during initialization, create them.
+## MODEL PRACY
+Projekt prowadzi przede wszystkim AI: samodzielnie obsługuje GitHub, kod, integrację, kompilację Windows x86, testy, manifesty, loader, updater i paczki. Użytkownik opisuje funkcję, testuje gotowe buildy, zgłasza błędy i akceptuje wersje stabilne. Nie zlecaj mu ręcznego zarządzania repozytorium ani kompletowania plików, jeśli możesz zrobić to sam. Nie deklaruj operacji, których nie wykonano.
 
-## 3. Delivery-first task procedure
-1. Identify the user-visible acceptance condition and the shortest existing integration path; inspect/reuse the canonical module and the working GUI loader/bootstrap before proposing new architecture. Do not create a new DLL for a small feature if an appropriate module can host it.
-2. Ensure `work` descends from current `main`; preserve divergent work before reconciling. Develop on `work` only. `main` is the last user-accepted stable state; experimental commits do not increment stable versions.
-3. For the first client-dependent change, verify the exact active EXE using `python tools/verify_reference_client.py --path <Wow.exe>`, `reference/client/reference.json` and a binary/source audit. Never transplant code, offsets, memory layouts or hooks from WoW 1.12 or another client/build. `src/` is canonical editable source root; if `runtime/current.json` declares a `source_path`/`canonical_source`, use that exact path.
-4. Make the smallest end-to-end implementation: real verified game-facing adapter, safe action dispatch, lifecycle/exception handling, integration with existing loader, and GUI plus automatically persisted settings where configurable. An isolated decision engine, DLL export, successful `LoadLibrary`, or test executable is not the finished gameplay feature.
-5. **Build immediately after the first coherent implementation.** Use the existing Windows x86 GitHub Actions build; update the relevant workflow to compile/link every affected component and upload a complete, clearly named ZIP. Prefer one-command, incremental, parallelizable build/test paths. Do not spend iterations on documentation or infrastructure unrelated to producing the DLL.
-6. Run `python tools/verify_current.py` after substantial changes and `python tools/verify_repo.py` when repo/baseline/recovery metadata changes and before stable promotion. Also run the exact-client verifier for client-dependent changes. Verify module ABI, PE32/I386, SHA256, dependencies, package contents and loader compatibility; repair the cause of any failure rather than weakening validators.
-7. Deliver one complete test ZIP with the DLL and the compatible loader/EXE/configuration actually needed. If Wow.exe is included, place it at the ZIP root beside DLLs. Do not overwrite a running game or ship incompatible sets. Provide the GitHub Actions artifact or a verified direct download, commit SHA, actual test results and exact in-game checks. If CI cannot test WoW itself, say so.
-8. Iterate on observed game results. Only after explicit user acceptance promote the **exact verified build** to `main`, update `CURRENT.json`, `runtime/current.json`, integrity manifests, baseline and rollback metadata, run both verifiers and synchronize `work`.
+## START KAŻDEGO ZADANIA
+Źródłem prawdy jest aktualny GitHub. Czytaj w kolejności:
+1. AGENTS.md
+2. AI_START_HERE.md
+3. AI_INDEX.json
+4. CURRENT.json
+5. runtime/current.json
+6. Wyłącznie pliki potrzebnego modułu, jego testów i procesu budowania.
 
-## 4. Delivery states — never conflate
-- `CORE_ONLY`: logic/unit tests only; no native gameplay action.
-- `DLL_BUILT`: Windows x86 DLL built and statically/package-verified; in-game behavior not established.
-- `IN_PROCESS_TESTED`: exact DLL loaded/initialized in the intended game process; gameplay feature not necessarily working.
-- `GAMEPLAY_TESTED`: user or reproducible in-game test confirms requested behavior, with limitations recorded.
-- `STABLE_ACCEPTED`: user accepted the tested artifact; only this state may be promoted to `main`.
-Do not mark a feature `GAMEPLAY_TESTED` from CI-only tests or a successful loader log. Preserve true status in module docs, index and artifact metadata.
+Brakujące pliki startowe utwórz podczas inicjalizacji. Nie odtwarzaj stanu z pamięci rozmów ani dawnych ZIP-ów, gdy dane są w repozytorium. Nie skanuj bez potrzeby całego repozytorium i archiwów.
 
-## 5. Runtime, updater, stability
-Each active component needs an unambiguous canonical source, version, SHA256, exact-client compatibility and dependencies. The updater must handle the complete compatible EXE/DLL/configuration set, verify hashes, detect incomplete updates, and roll back safely. Do not overwrite files held open by the game. Never select source by similar DLL names or represent recovered source as original.
+## NAJSZYBSZA DROGA DO DZIAŁAJĄCEJ DLL
+Dla żądania funkcji w grze oczekiwany wynik to **kompletna implementacja, DLL i gotowa paczka testowa**, nie sam kod, prompt, dokumentacja, osobny EXE testowy ani silnik decyzyjny bez połączenia z klientem.
 
-Protect game startup: check module order, thread affinity, pointers, hook lifetime, unloading and errors. Diagnose crashes across recently changed dependencies rather than treating rollback as a fix. Keep diagnostics capable of reporting EXE/DLL versions, logs and available exception details. Avoid duplicate DLLs, unnecessary refactoring, unstable unverified hooks or manual GitHub work for the user.
+Przebieg: określ zachowanie w grze → znajdź istniejący moduł i loader → potwierdź kompatybilność klienta → zaimplementuj najmniejszą kompletną funkcję wraz z rzeczywistym adapterem klienta → zbuduj DLL x86 → zweryfikuj → przygotuj i udostępnij ZIP → popraw według wyników testu.
 
-## 6. Communication and definition of done
-After changes report: implemented gameplay behavior (or exact blocker), affected module, DLL/ZIP download when actually built, verification and CI/in-game status separately, `work`/`main` state and one concrete game test. `napraw` = diagnose, implement, verify and package; `rozbuduj` = extend without regressions; `buduj`/`daj paczkę` = provide complete artifact; `stabilne`/`akceptuję` = promote only the accepted tested commit. A code-only or core-only outcome is explicitly **unfinished** for a gameplay-feature request. See `docs/DLL_DELIVERY.md` and `docs/WORKFLOW.md`.
+Po pierwszej spójnej implementacji od razu kompiluj. Rozbudowuj istniejącą DLL zamiast tworzyć osobną dla drobnej funkcji. Nowe opcje regulowane przez użytkownika dodawaj do GUI z automatycznym zapisem i odczytem ustawień. Nie rozwijaj pobocznej infrastruktury kosztem dostarczenia działającej funkcji.
+
+Rozróżniaj statusy:
+- CORE_ONLY — działa tylko logika, brak akcji w grze;
+- DLL_BUILT — DLL skompilowana i zweryfikowana statycznie;
+- IN_PROCESS_TESTED — DLL załadowana i zainicjalizowana w kliencie;
+- GAMEPLAY_TESTED — potwierdzono żądane działanie podczas testu w grze;
+- STABLE_ACCEPTED — użytkownik zaakceptował konkretny przetestowany build.
+
+Sama kompilacja, uruchomienie WoW, załadowanie DLL lub PASS w CI nie dowodzą działania funkcji. Jeśli pełny build jest zablokowany, wskaż konkretny brak i udostępnij tylko rzeczywiście przygotowany artefakt, uczciwie oznaczając jego status. Nie wymyślaj linków do plików.
+
+## GITHUB I WERSJE
+main = ostatni zaakceptowany stabilny stan; work = rozwój i eksperymenty. Pracuj na work. Przed nową iteracją upewnij się, że work bazuje na aktualnym main; zabezpiecz rozbieżny stan przed uporządkowaniem branchy. Nie twórz nowej stabilnej wersji dla każdej próby.
+
+Po akceptacji dokładnie przetestowanego buildu: promuj go do main, przygotuj baseline i rollback, uaktualnij CURRENT.json, runtime/current.json, SHA256, zależności i dokumentację; uruchom weryfikatory, po czym zsynchronizuj work z main. Nie proś użytkownika o ręczne merge, rebase ani commity.
+
+## KOD I KOMPATYBILNOŚĆ
+Pracuj wyłącznie dla WoW 3.3.5a build 12340 Windows x86. Przed pierwszą zmianą zależną od klienta potwierdź aktywny EXE narzędziem `python tools/verify_reference_client.py --path <Wow.exe>` i odpowiednim audytem binarki. Nie przenoś automatycznie kodu, offsetów, struktur ani hooków z WoW 1.12 lub innych buildów.
+
+`src/` to canonical editable source root. Gdy runtime/current.json wskazuje source_path/canonical_source, używaj dokładnie tego pliku; nie zgaduj po nazwie DLL. Archiwa służą do recovery i rollbacku, a reconstructed source nie jest original source. Wprowadzaj punktowe zmiany i chroń działające funkcje.
+
+## BUILD, UPDATER I PACZKI
+GitHub Actions powinien automatycznie kompilować zmienione komponenty Windows x86, uruchamiać właściwe testy, sprawdzać PE32/I386, ABI, SHA256, zgodność zależności oraz publikować **kompletny ZIP** do pobrania. Aktualizuj odpowiedni workflow przy zmianach modułu; preferuj szybkie kompilacje i nie twórz zbędnych pipeline'ów. Zielony workflow nie zastępuje testu w grze.
+
+Paczka zawiera tylko potrzebne pliki, w tym zgodne DLL, loader/EXE i konfigurację. Jeśli zawiera WoW.exe, umieść go w głównym katalogu ZIP-a obok DLL. Przed publikacją sprawdź strukturę, integralność i kompletność paczki. Updater powinien kontrolować SHA256, zależności, niekompletne aktualizacje i rollback; nie instaluj niezgodnych zestawów ani nie nadpisuj plików używanych przez uruchomioną grę.
+
+## STABILNOŚĆ I WERYFIKACJA
+Stabilność uruchamiania i działania gry jest warunkiem dostarczania funkcji. Kontroluj kolejność ładowania, hooki, wątki, wskaźniki, cykl życia obiektów i zależności. Przy crashu ustal przyczynę, także w ostatnio zmienionych zależnościach; rollback nie zastępuje naprawy. Loader powinien umożliwiać raporty z wersjami EXE/DLL, logami i dostępnymi danymi wyjątku.
+
+Po każdej istotnej zmianie uruchom `python tools/verify_current.py`; przy zmianie repozytorium, baseline'u, recovery i promocji stabilnej wersji także `python tools/verify_repo.py`. Sprawdzaj manifesty, canonical source, aktywny runtime, architekturę, SHA256, zależności i kompletność buildu. Naprawiaj przyczynę błędu, nie osłabiaj verifiera dla PASS. Nie udostępniaj nieweryfikowanego buildu jako gotowego do gry; wyjątek to jasno oznaczony eksperyment diagnostyczny.
+
+## KOMUNIKACJA
+Nie pytaj o dane, które można samodzielnie ustalić w GitHubie, plikach projektu i istniejących artefaktach. Po zmianie podaj krótko: faktycznie wdrożoną funkcję lub blokadę, moduł, link do istniejącego ZIP/DLL, wynik weryfikacji, status work/main i konkretny test w grze.
+
+„napraw” = diagnozuj, popraw, zweryfikuj i przygotuj paczkę; „rozbuduj” = dodaj funkcję bez regresji; „optymalizuj” = przyspiesz bez łamania kompatybilności; „przeanalizuj” = zacznij od aktualnego GitHuba; „wrzuć na GitHub” = wykonaj zmianę; „buduj”/„daj paczkę” = dostarcz gotowy artefakt; „stabilne”/„akceptuję” = promuj zaakceptowany, zweryfikowany build.
+
+**Najważniejszy miernik projektu: czas od zgłoszenia do rzeczywiście działającej DLL gotowej do testu.** Aktualne instrukcje repozytorium mają pierwszeństwo przed starszymi rozmowami.
