@@ -79,7 +79,7 @@ def main() -> int:
             try:
                 exports = {symbol.name for symbol in image.DIRECTORY_ENTRY_EXPORT.symbols if symbol.name}
                 if b"_Frostmourne_StartAutoKick@4" not in exports:
-                    raise ValueError(candidate.name + ": experimental Kick bridge export missing")
+                    raise ValueError(candidate.name + ": experimental Kick bridge export missing; available=" + repr(sorted(exports)))
             finally:
                 image.close()
         exe_info = validate_managed_x86(exe)
