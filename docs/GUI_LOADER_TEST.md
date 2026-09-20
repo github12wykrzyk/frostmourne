@@ -27,19 +27,27 @@ or the exact failure. Older installations of this specific addon are backed
 up before replacement; files not identifiable as our addon are never replaced.
 The loader DLL on its own does NOT register the slash command.
 
-On first entry into the game world, the addon **starts automatically** and chat prints
-`FM Cast Probe ADDON ZALADOWANY W GRZE: monitoring castow AKTYWNY automatycznie`.
-This is evidence of the Lua addon starting, **not** evidence of successful DLL loading.
-The GUI's `CAST BINDINGS=PASS` separately confirms the read-only DLL binding check.
-No slash command is required. Select a casting enemy: the addon automatically shows
-GUID, spell name, remaining time, interruptibility and cast/channel status.
-Optional `/fmcast off` disables observations, `/fmcast on` re-enables them.
-The addon sends its startup message once per login/UI reload; automatic Kick is OFF.
-If the chat does not print `Addon LOADED`, inspect WoW's AddOns list at
-character selection; enable FrostmourneCastProbe. If a game instance was
-already open before installation, fully restart the game through the new loader.
-The installer operates only on the directory of the EXE selected and verified
-in the GUI, not on a separate launcher/alternate game folder.
+On entering the game, the addon starts automatically. It shows a persistent
+green/yellow banner near the top of the game screen:
+`FM CAST PROBE: LUA AKTYWNE | AUTO KICK OFF`.
+It also prints `FM Cast Probe LUA ADDON ZALADOWANY: monitoring castow ON automatycznie`
+to the default chat frame once the game UI/chat is ready. **No slash command
+is required.** The banner is independent of chat tab filters; if neither
+banner nor message appears, the game has not successfully executed this addon
+(or its UI failed to initialize). A `CAST BINDINGS=PASS` in the loader confirms
+only the separately loaded read-only DLL, NOT addon activation or native cast reading.
+Select a casting target to see GUID, spell, remaining time and interruptibility.
+Optional `/fmcast off` disables sampling. Auto Kick remains OFF.
+
+If the chat and banner are both absent, check the loader log for
+`ETAP addon_install=PASS`, including the **exact destination path**; this
+asserts that the files were copied and hashed, not that the game loaded them.
+At character selection open `AddOns` and ensure `FrostmourneCastProbe` is
+listed and enabled. If absent despite the file-copy PASS, the selected EXE's
+directory may not be the directory from which this client actually reads
+`Interface\\AddOns`; capture the loader install path and the game's
+AddOns list before changing any other paths. A game instance already running
+before installation must be closed and launched again.
 
 Use only an isolated, authorized local test. Preserve the GUI log and in-game
 cast print or screenshot after one test. Do not disable antivirus or anti-cheat,

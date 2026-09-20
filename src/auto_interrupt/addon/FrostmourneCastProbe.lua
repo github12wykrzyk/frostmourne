@@ -1,13 +1,41 @@
 -- FROSTMOURNE / WoW 3.3.5a. This addon observes only official Lua API results.
 -- It neither communicates with the DLL nor casts spells or changes targets.
-local running = true -- Active by default; no slash command required.
+local running = true -- Active without any slash commands.
 local frame = CreateFrame("Frame")
-local announced = false
 local elapsed = 0
 local lastKey = ""
 local lastPrinted = 0
+local announced = false
+local indicator = nil
+
+-- The banner is independent of chat tabs/filters. It means LUA ADDON loaded,
+-- not that the diagnostic DLL can read live casts or execute Kick.
+local function showIndicator()
+    if not UIParent then return end
+    if not indicator then
+        indicator = CreateFrame("Frame", nil, UIParent)
+        indicator:SetWidth(520)
+        indicator:SetHeight(30)
+        indicator:SetPoint("TOP", UIParent, "TOP", 0, -95)
+        indicator:SetFrameStrata("HIGH")
+        indicator:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16,
+            edgeSize=10, insets={left=3,right=3,top=3,bottom=3}})
+        indicator:SetBackdropColor(0,0,0,0.85)
+        local message = indicator:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        message:SetPoint("CENTER", indicator, "CENTER", 0, 0)
+        message:SetText("|cff55ff99FM CAST PROBE: LUA AKTYWNE|r  |cffffff00AUTO KICK OFF|r")
+    end
+    indicator:Show()
+end
+
 local function say(message)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff77ddffFM Cast Probe|r " .. message)
+    local chat = DEFAULT_CHAT_FRAME or ChatFrame1
+    if chat and chat.AddMessage then
+        chat:AddMessage("|cff77ddffFM Cast Probe|r " .. message)
+        return true
+    end
+    return false
 end
 local function sample(unit)
     if not UnitExists(unit) then return nil end
@@ -26,18 +54,25 @@ local function sample(unit)
         " remaining_ms=" .. tostring(ms) .. " interruptible=" .. kickable,
         guid .. ":" .. tostring(starts) .. ":" .. tostring(ends) .. ":" .. mode
 end
--- Confirm addon activation only AFTER entering the world: DLL load is checked by the GUI,
--- and must not be inferred from this independent Lua addon message.
+-- PLAYER_LOGIN/PLAYER_ENTERING_WORLD are observed on the game UI thread.
+-- Print after chat exists. The visible banner remains if chat tabs hide messages.
+frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_ENTERING_WORLD" and not announced then
-        announced = true
+    if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         running = true
-        say("ADDON ZALADOWANY W GRZE: monitoring castow AKTYWNY automatycznie. Auto Kick OFF; potwierdzenie DLL sprawdz w loaderze.")
+        showIndicator()
+        if not announced then
+            announced = say("LUA ADDON ZALADOWANY: monitoring castow ON automatycznie; Auto Kick OFF. DLL: sprawdz PASS w loaderze.")
+        end
     end
 end)
 frame:SetScript("OnUpdate", function(self, dt)
     if not running then return end
+    if not announced then
+        showIndicator()
+        announced = say("LUA ADDON ZALADOWANY: monitoring castow ON automatycznie; Auto Kick OFF. DLL: sprawdz PASS w loaderze.")
+    end
     elapsed = elapsed + dt
     if elapsed < 0.10 then return end
     elapsed = 0
@@ -73,5 +108,4 @@ SlashCmdList["FROSTMOURNECASTPROBE"] = function(msg)
     end
 end
 
--- This message confirms addon initialization; a DLL binding PASS alone does not.
--- The in-game confirmation is sent by PLAYER_ENTERING_WORLD, not during file execution.
+-- If neither the banner nor chat message appears, WoW did not execute this addon.

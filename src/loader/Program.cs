@@ -296,7 +296,7 @@ namespace FrostmourneGui {
                 Write("ETAP addon_file=PASS path=" + to + " sha256=" + expected);
             }
             Write("ETAP addon_install=PASS folder=" + target +
-                " command=/fmcast_on game_restart_required_if_already_running=true");
+                " game_addon_loaded=NOT_VERIFIED (sprawdz zielony napis LUA AKTYWNE na ekranie gry)");
         }
         void Launch() {
             if (checking) return;
@@ -350,7 +350,7 @@ namespace FrostmourneGui {
                         dllState = "PASS";
                         bootstrap.Status = "PASS: zaladowana i zainicjalizowana w PID " + game.Id;
                         resultInfo.Text = outcome;
-                        dllInfo.Text = "DLL w Wow.exe: PASS | ABI=1.0 | CAST BINDINGS=PASS (tylko odczyt); Auto Kick OFF";
+                        dllInfo.Text = "DLL: PASS (adresy) | Addon: SKOPIOWANY, status w grze NIEZNANY | Auto Kick OFF";
                         Write("ETAP test_inprocess=PASS pid=" + game.Id + " sha256=" + bootstrap.Hash);
                     } catch (Exception ex) {
                         dllState = "FAIL";
