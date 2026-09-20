@@ -430,10 +430,16 @@ static BOOL CALLBACK fm_find_window(HWND hwnd, LPARAM parameter) {
     return TRUE;
 }
 
+/* The game can destroy its startup/login HWND while Wow.exe stays alive.
+ * The worker must discover the replacement; it must not keep posting to the
+ * stale HWND or permanently disable the module on a normal window transition.
+ * Only rebind after the previous HWND is no longer a valid window: never
+ * overwrite a still-live foreign WndProc. */
 static DWORD WINAPI fm_native_worker(LPVOID parameter) {
     FM_FIND_WINDOW window;
     LONG_PTR old;
-    DWORD i;
+    DWORD attempts = 0;
+    int had_window = 0;
     (void)parameter;
     fm_log("event=ADAPTER_START nearby_scan=EXPERIMENTAL phase=WAITING_FOR_WINDOW");
     if (!fm_exact_cast_gate()) {
@@ -441,7 +447,42 @@ static DWORD WINAPI fm_native_worker(LPVOID parameter) {
         InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
         return 0;
     }
-    for (i = 0; i < 240u && !InterlockedCompareExchange(&g_stop, 0, 0); ++i) {
+    while (!InterlockedCompareExchange(&g_stop, 0, 0) &&
+           InterlockedCompareExchange(&g_status, 0, 0) != FM_AP_NATIVE_FAILED) {
+        DWORD pid = 0;
+        if (g_window && IsWindow(g_window)) {
+            GetWindowThreadProcessId(g_window, &pid);
+            if (pid != GetCurrentProcessId()) {
+                fm_log("event=WINDOW_HANDLE_REUSED adapter=FAILED gameplay_actions=DISABLED");
+                InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
+                break;
+            }
+            if (InterlockedCompareExchange(&g_tick_posted, 1, 0) == 0 &&
+                !PostMessageW(g_window, FM_WM_TICK, 0, 0))
+                InterlockedExchange(&g_tick_posted, 0);
+            Sleep(100);
+            continue;
+        }
+        if (g_window) {
+            fm_log("event=GAME_WINDOW_REPLACED action=REACQUIRE gameplay_actions=PAUSED");
+            /* The old HWND is destroyed. Wait until the in-flight tick has
+             * returned before publishing a different HWND/WndProc pair. */
+            while (InterlockedCompareExchange(&g_busy, 0, 0) &&
+                   !InterlockedCompareExchange(&g_stop, 0, 0)) Sleep(10);
+            if (InterlockedCompareExchange(&g_stop, 0, 0)) break;
+            if (g_engine) {
+                g_engine->config.enabled = 0;
+                fm_ap_reset_world(g_engine, ++g_world_epoch);
+            }
+            g_last_snapshot = 0;
+            g_last_pending = 0;
+            g_action_thread_id = 0;
+            g_window = NULL;
+            g_previous = NULL;
+            InterlockedExchange(&g_tick_posted, 0);
+            InterlockedExchange(&g_status, FM_AP_NATIVE_STARTING);
+            attempts = 0;
+        }
         window.pid = GetCurrentProcessId();
         window.hwnd = NULL;
         EnumWindows(fm_find_window, (LPARAM)&window);
@@ -451,30 +492,21 @@ static DWORD WINAPI fm_native_worker(LPVOID parameter) {
             if (old) {
                 g_previous = (WNDPROC)old;
                 g_window = window.hwnd;
+                attempts = 0;
+                had_window = 1;
                 fm_log("event=WINDOW_THREAD_DISPATCH_INSTALLED phase=WAITING_FOR_ROGUE_LOGIN");
-                break;
             }
+        }
+        if (!g_window && ++attempts >= 240u) {
+            fm_log(had_window ?
+                "event=WINDOW_REACQUIRE_TIMEOUT gameplay_actions=DISABLED" :
+                "event=WINDOW_NOT_FOUND adapter=FAILED gameplay_actions=DISABLED");
+            InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
+            break;
         }
         Sleep(250);
     }
-    if (!g_window) {
-        fm_log("event=WINDOW_NOT_FOUND adapter=FAILED gameplay_actions=DISABLED");
-        InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
-        return 0;
-    }
-    while (!InterlockedCompareExchange(&g_stop, 0, 0) &&
-           InterlockedCompareExchange(&g_status, 0, 0) != FM_AP_NATIVE_FAILED &&
-           IsWindow(g_window)) {
-        if (InterlockedCompareExchange(&g_tick_posted, 1, 0) == 0 &&
-            !PostMessageW(g_window, FM_WM_TICK, 0, 0)) InterlockedExchange(&g_tick_posted, 0);
-        Sleep(100);
-    }
-    /* This DLL stays loaded until the process exits. Never unload a live callback. */
-    if (!InterlockedCompareExchange(&g_stop, 0, 0) &&
-        InterlockedCompareExchange(&g_status, 0, 0) != FM_AP_NATIVE_FAILED) {
-        fm_log("event=GAME_WINDOW_LOST adapter=FAILED gameplay_actions=DISABLED");
-        InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
-    }
+    /* The DLL stays mapped until the process exits: never unload a live callback. */
     return 0;
 }
 
