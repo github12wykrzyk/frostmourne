@@ -37,3 +37,13 @@ typedef struct FM_INTERRUPT_PROBE_PACKET {
     DWORD image_base, registration_mask, prologue_mask, win32_error;
 } FM_INTERRUPT_PROBE_PACKET;
 __declspec(dllexport) DWORD WINAPI Frostmourne_ProbeInterruptBindings(LPVOID packet);
+
+/* Experimental target-only native Kick bridge, called once after the verified
+ * bootstrap has initialized. This is NOT a gameplay success confirmation.
+ * No arbitrary Wow.exe version or alternate in-process source is supported. */
+#define FM_KICK_START_MAGIC 0xF17AC176u
+typedef struct FM_KICK_PACKET {
+    DWORD size, target_pid, enabled, max_remaining_ms, safety_margin_ms;
+    DWORD result, win32_error, observed_pid, hook_installed;
+} FM_KICK_PACKET;
+__declspec(dllexport) DWORD WINAPI Frostmourne_StartAutoKick(LPVOID packet);
