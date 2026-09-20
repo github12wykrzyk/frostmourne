@@ -31,6 +31,7 @@ namespace FrostmourneGui {
         public string architecture { get; set; }
         public int abi_major { get; set; }
         public int abi_minor { get; set; }
+        public string bootstrap_mode { get; set; }
         public string init_export { get; set; }
         public string abi_export { get; set; }
         public string option_export { get; set; }
