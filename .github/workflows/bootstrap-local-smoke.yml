@@ -5,6 +5,7 @@ on:
     branches: [work]
     paths:
       - 'src/bootstrap/**'
+      - 'src/auto_pickpocket/**'
       - 'tools/package_local_bootstrap.py'
       - 'docs/BOOTSTRAP_LOCAL_TEST.md'
       - '.github/workflows/bootstrap-local-smoke.yml'
@@ -38,7 +39,7 @@ jobs:
           call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x86 -host_arch=x64
           if errorlevel 1 exit /b 1
           if not exist dist mkdir dist
-          cl /nologo /W4 /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c /link /INCREMENTAL:NO
+          cl /nologo /W4 /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c src\auto_pickpocket\auto_pickpocket.c /link /INCREMENTAL:NO
           if errorlevel 1 exit /b 1
           cl /nologo /W4 /MT /Fe:dist\FrostmourneLocalSmoke.exe src\bootstrap\local_smoke.c /link /INCREMENTAL:NO
           if errorlevel 1 exit /b 1
