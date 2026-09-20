@@ -93,7 +93,7 @@ for n in ("UnitCastingInfo","UnitChannelInfo","CastSpellByID","CastSpellByName",
 for address,length,cap in ((0x611df0,0x295,175),(0x612090,0x205,145),
                            (0x80da40,0x3c,35),(0x80da80,0x142,120),
                            (0x80cce0,0x135,85),
-                           (0x53e060,0x200,130),(0x60e630,0x160,95),
+                           (0x53e060,0x270,230),(0x60e630,0x160,95),
                            (0x60c1f0,0x150,90),(0x60abf0,0x1a0,125),
                            (0x84e0e0,0x135,90),(0x86ae20,0x90,40)):
     dump(address,length,cap)
