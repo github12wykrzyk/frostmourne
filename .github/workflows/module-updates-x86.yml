@@ -1,0 +1,83 @@
+name: module-updates-x86
+on:
+  push:
+    branches: [work]
+    paths:
+      - 'src/bootstrap/**'
+      - 'src/auto_pickpocket/**'
+      - 'src/auto_interrupt/addon/**'
+      - 'src/auto_interrupt/kick_native_bridge.c'
+      - 'tools/package_update_module.py'
+      - '.github/workflows/module-updates-x86.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: module-publish-work
+  cancel-in-progress: false
+
+jobs:
+  module-windows-x86:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify source and target
+        shell: cmd
+        run: |
+          python tools/verify_reference_client.py --path reference/client/Wow.exe
+          if errorlevel 1 exit /b 1
+          python tools/verify_current.py
+          if errorlevel 1 exit /b 1
+          python tools/verify_repo.py
+          if errorlevel 1 exit /b 1
+          python -m pip install lupa==2.6 pefile==2024.8.26
+          if errorlevel 1 exit /b 1
+          python tools/verify_cast_probe_lua.py
+          if errorlevel 1 exit /b 1
+      - name: Compile only native module for x86
+        shell: cmd
+        run: |
+          for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set VSINSTALL=%%i
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x86 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          if not exist dist mkdir dist
+          cl /nologo /W4 /WX /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c src\auto_pickpocket\auto_pickpocket.c src\auto_pickpocket\native_adapter.c src\auto_interrupt\kick_native_bridge.c /link /INCREMENTAL:NO user32.lib
+          if errorlevel 1 exit /b 1
+      - name: Validate and package one module
+        shell: cmd
+        run: |
+          python tools/package_update_module.py
+          if errorlevel 1 exit /b 1
+      - name: Publish immutable commit-tagged prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "work-modules-${{ github.sha }}"
+          gh release create $tag dist/Frostmourne_Modules_x86.zip --target "${{ github.sha }}" --title "Frostmourne modules ${{ github.sha }}" --notes "Experimental x86 module. ABI static checks only; gameplay unverified." --prerelease
+      - name: Point work channel to published SHA256-pinned module
+        shell: pwsh
+        run: |
+          $meta = Get-Content dist/module-release.json -Raw | ConvertFrom-Json
+          $feed = Get-Content updates/work-feed.json -Raw | ConvertFrom-Json
+          $meta | Add-Member -NotePropertyName url -NotePropertyValue "https://github.com/github12wykrzyk/frostmourne/releases/download/work-modules-${{ github.sha }}/Frostmourne_Modules_x86.zip"
+          $feed.packages = @($meta)
+          $feed | ConvertTo-Json -Depth 12 | Set-Content updates/work-feed.json -Encoding utf8
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates/work-feed.json
+          git commit -m "chore(updates): publish pinned module feed ${{ github.sha }}"
+          git push origin HEAD:work
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Frostmourne_Modules_x86
+          path: dist/Frostmourne_Modules_x86.zip
+          if-no-files-found: error
