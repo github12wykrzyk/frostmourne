@@ -62,11 +62,12 @@ namespace FrostmourneGui {
             foreach (char c in s) if (!Uri.IsHexDigit(c)) return false;
             return true;
         }
-        internal static List<Module> Discover(Action<string> log) {
+        internal static List<Module> Discover(Action<string> log) { return DiscoverAt(BaseDir, log); }
+        internal static List<Module> DiscoverAt(string root, Action<string> log) {
             List<Module> found = new List<Module>();
-            if (!Directory.Exists(BaseDir)) return found;
+            if (!Directory.Exists(root)) return found;
             HashSet<string> ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string folder in Directory.GetDirectories(BaseDir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)) {
+            foreach (string folder in Directory.GetDirectories(root).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)) {
                 string manifestPath = Path.Combine(folder, "module.json");
                 if (!File.Exists(manifestPath)) continue;
                 Module m = new Module { Path = manifestPath, Enabled = false, Status = "WYKRYTY; niezweryfikowany" };
