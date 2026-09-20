@@ -56,6 +56,8 @@ namespace FrostmourneGui {
         readonly Label pidInfo = new Label();
         readonly Label resultInfo = new Label();
         readonly Timer poll = new Timer();
+        readonly CheckBox kickTrial = new CheckBox();
+        readonly NumericUpDown kickWindow = new NumericUpDown();
         Process game;
         string verifiedExe = "";
         string verifiedHash = "";
@@ -81,6 +83,8 @@ namespace FrostmourneGui {
             BuildUi();
             ReadPin();
             Restore();
+            kickTrial.CheckedChanged += (s,e) => Save();
+            kickWindow.ValueChanged += (s,e) => Save();
             AddDefaultDll();
             if (migratedLegacyDll) Save(); // Persist migration so stale bootstrap paths cannot block subsequent launches.
             RefreshModules();
@@ -116,7 +120,7 @@ namespace FrostmourneGui {
             Label("BIBLIOTEKI DLL", 24, 199, 750, 26, 12);
             Button("Dodaj DLL", 744, 195, 132, 30, (s,e) => PickDll());
             Button("Usun zaznaczony", 884, 195, 137, 30, (s,e) => RemoveDll());
-            modules.Location = new Point(24, 230); modules.Size = new Size(997, 185);
+            modules.Location = new Point(24, 230); modules.Size = new Size(997, 151);
             modules.View = View.Details; modules.FullRowSelect = true; modules.CheckBoxes = true;
             modules.GridLines = true; modules.HideSelection = false;
             modules.BackColor = Color.FromArgb(28,35,48); modules.ForeColor = Color.White;
@@ -130,6 +134,14 @@ namespace FrostmourneGui {
                 }
             };
             Controls.Add(modules);
+            kickTrial.Text = "AUTO KICK - EKSPERYMENT (wymaga Rogue, tylko zaznaczony cel)";
+            kickTrial.Location = new Point(24, 387); kickTrial.Size = new Size(550, 32);
+            kickTrial.BackColor = Color.FromArgb(19,23,33); kickTrial.ForeColor = Color.FromArgb(245,221,154);
+            kickTrial.Checked = false; Controls.Add(kickTrial);
+            Label("Pozostaly czas (ms)", 594, 389, 226, 24);
+            kickWindow.Location = new Point(830, 387); kickWindow.Size = new Size(172, 25);
+            kickWindow.Minimum = 200; kickWindow.Maximum = 3000; kickWindow.Increment = 50;
+            kickWindow.Value = 800; Controls.Add(kickWindow);
             Place(dllInfo, "DLL w procesie gry: NIEPRZETESTOWANE", 24, 425, 995, 26);
             Button("URUCHOM WOW", 24, 460, 997, 52, (s,e) => Launch());
             Place(resultInfo, "TEST DLL W WOW: NIEPRZETESTOWANE", 24, 521, 995, 28);
@@ -269,13 +281,21 @@ namespace FrostmourneGui {
                 !luaText.Contains("SLASH_FROSTMOURNECASTPROBE1") ||
                 !luaText.Contains("SlashCmdList[\"FROSTMOURNECASTPROBE\"]"))
                 throw new InvalidDataException("Niepoprawna zawartosc dolaczonego dodatku FrostmourneCastProbe");
+            if (!luaText.Contains("local kickRequests = false"))
+                throw new InvalidDataException("Brak bezpiecznej konfiguracji testu Kick w dolaczonym Lua");
             string target = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(verifiedExe),
                 "Interface", "AddOns", "FrostmourneCastProbe");
             Directory.CreateDirectory(target);
             foreach (string fileName in new[] { "FrostmourneCastProbe.toc", "FrostmourneCastProbe.lua" }) {
                 string from = System.IO.Path.Combine(src, fileName);
                 string to = System.IO.Path.Combine(target, fileName);
-                string expected = Verify.Hash(from);
+                string payload = File.ReadAllText(from);
+                if (fileName.EndsWith(".lua", StringComparison.OrdinalIgnoreCase) && kickTrial.Checked)
+                    payload = payload.Replace("local kickRequests = false", "local kickRequests = true");
+                byte[] bytes = Encoding.UTF8.GetBytes(payload);
+                string expected;
+                using (SHA256 sha = SHA256.Create())
+                    expected = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
                 if (File.Exists(to) && Verify.Hash(to) != expected) {
                     // Preserve previous diagnostic versions or locally modified addon files.
                     string prior = File.ReadAllText(to);
@@ -290,13 +310,14 @@ namespace FrostmourneGui {
                     Write("ETAP addon_backup=PASS file=" + backup);
                 }
                 if (!File.Exists(to) || Verify.Hash(to) != expected)
-                    File.Copy(from, to, true);
+                    File.WriteAllBytes(to, bytes);
                 if (Verify.Hash(to) != expected)
                     throw new InvalidDataException("Blad weryfikacji SHA256 zainstalowanego dodatku: " + to);
                 Write("ETAP addon_file=PASS path=" + to + " sha256=" + expected);
             }
             Write("ETAP addon_install=PASS folder=" + target +
-                " game_addon_loaded=NOT_VERIFIED (sprawdz zielony napis LUA AKTYWNE na ekranie gry)");
+                " kick_trial_requested=" + kickTrial.Checked +
+                " game_addon_loaded=NOT_VERIFIED (sprawdz napis LUA AKTYWNE na ekranie gry)");
         }
         void Launch() {
             if (checking) return;
@@ -346,7 +367,8 @@ namespace FrostmourneGui {
                         if (Verify.Hash(bootstrap.Path) != pinnedHash ||
                             Verify.Hash(verifiedExe) != verifiedHash)
                             throw new InvalidDataException("Plik zmienil sie pomiedzy weryfikacja a probą ladowania");
-                        string outcome = RemoteBootstrap.LoadAndInitialize(game, verifiedExe, bootstrap.Path, Write);
+                        string outcome = RemoteBootstrap.LoadAndInitialize(game, verifiedExe, bootstrap.Path,
+                            kickTrial.Checked, (uint)kickWindow.Value, Write);
                         dllState = "PASS";
                         bootstrap.Status = "PASS: zaladowana i zainicjalizowana w PID " + game.Id;
                         resultInfo.Text = outcome;
@@ -386,6 +408,8 @@ namespace FrostmourneGui {
                 Directory.CreateDirectory(home);
                 StringBuilder b = new StringBuilder();
                 b.AppendLine("schema=1"); b.AppendLine("exe=" + Verify.Enc(exe.Text));
+                b.AppendLine("kicktrial=" + (kickTrial.Checked ? "1" : "0"));
+                b.AppendLine("kickwindow=" + ((int)kickWindow.Value).ToString());
                 foreach(Module m in selected) b.AppendLine("dll=" + (m.Enabled ? "1" : "0") + "|" + Verify.Enc(m.Path));
                 string tmp = settings + ".tmp";
                 File.WriteAllText(tmp, b.ToString(), Encoding.UTF8);
@@ -400,6 +424,14 @@ namespace FrostmourneGui {
                 if (lines.Length == 0 || lines[0].Trim('\uFEFF') != "schema=1") throw new InvalidDataException("Nieznany format konfiguracji");
                 foreach(string line in lines) {
                     if (line.StartsWith("exe=")) exe.Text = Verify.Dec(line.Substring(4));
+                    if (line == "kicktrial=1") kickTrial.Checked = true;
+                    if (line == "kicktrial=0") kickTrial.Checked = false;
+                    if (line.StartsWith("kickwindow=")) {
+                        int value;
+                        if (int.TryParse(line.Substring(11), out value) &&
+                            value >= kickWindow.Minimum && value <= kickWindow.Maximum)
+                            kickWindow.Value = value;
+                    }
                     if (line.StartsWith("dll=")) {
                         int split = line.IndexOf('|');
                         if (split < 5) continue;

@@ -118,7 +118,8 @@ namespace FrostmourneGui {
             return pointer;
         }
 
-        internal static string LoadAndInitialize(Process target, string expectedExe, string dll, Action<string> log) {
+        internal static string LoadAndInitialize(Process target, string expectedExe, string dll,
+                                                 bool kickTrialEnabled, uint maxRemainingMs, Action<string> log) {
             if (IntPtr.Size != 4) throw new InvalidOperationException("Loader musi dzialac jako proces x86");
             if (target.HasExited) throw new InvalidOperationException("Wow.exe zakonczyl sie przed ladowaniem");
             if (!String.Equals(Path.GetFullPath(target.MainModule.FileName), Path.GetFullPath(expectedExe),
@@ -128,8 +129,8 @@ namespace FrostmourneGui {
             IntPtr loadLibrary = RemoteOsFunction(target, "LoadLibraryW");
             IntPtr process = OpenProcess(Access, false, (uint)target.Id);
             if (process == IntPtr.Zero) throw Win32("OpenProcess PID=" + target.Id);
-            IntPtr pathPointer = IntPtr.Zero, packetPointer = IntPtr.Zero, probePointer = IntPtr.Zero;
-            bool pathSafe = true, packetSafe = true, probeSafe = true;
+            IntPtr pathPointer = IntPtr.Zero, packetPointer = IntPtr.Zero, probePointer = IntPtr.Zero, kickPointer = IntPtr.Zero;
+            bool pathSafe = true, packetSafe = true, probeSafe = true, kickSafe = true;
             try {
                 byte[] pathData = Encoding.Unicode.GetBytes(Path.GetFullPath(dll) + "\0");
                 pathPointer = Allocate(process, pathData.Length, "DLL path");
@@ -228,9 +229,41 @@ namespace FrostmourneGui {
                     registrations != 0xF || prologues != 0xF || probeError != 0)
                     throw new InvalidOperationException("READ-ONLY interrupt binding probe FAIL; check stage/bitmasks in log");
                 log("ETAP interrupt_bindings=PASS pid=" + probePid +
-                    " sampled=4_registration_pairs_and_4_function_prologues live_cast=NOT_READ kick=DISABLED");
-                return "PASS: DLL PID=" + pid + ", Auto Pickpocket adapter STARTING/READY (wynik w grze NIEPOTWIERDZONY)";
+                    " sampled=4_registration_pairs_and_4_function_prologues kick_trial_requested=" + kickTrialEnabled);
+                if (maxRemainingMs < 200 || maxRemainingMs > 3000)
+                    throw new InvalidDataException("Kick: czas maksymalny poza 200..3000 ms");
+                uint kickRva = ExportRva(dll, "_Frostmourne_StartAutoKick@4");
+                byte[] kickPacket = new byte[36];
+                Buffer.BlockCopy(BitConverter.GetBytes((uint)36), 0, kickPacket, 0, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes((uint)target.Id), 0, kickPacket, 4, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes(kickTrialEnabled ? 1u : 0u), 0, kickPacket, 8, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes(maxRemainingMs), 0, kickPacket, 12, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes(150u), 0, kickPacket, 16, 4);
+                kickPointer = Allocate(process, kickPacket.Length, "Kick packet");
+                Write(process, kickPointer, kickPacket, "Kick packet");
+                uint kickReturn;
+                try {
+                    kickReturn = Invoke(process, Ptr(checked(loadedBase + kickRva)), kickPointer,
+                                        "Frostmourne_StartAutoKick", log);
+                } catch (TimeoutException) { kickSafe = false; throw; }
+                byte[] kickAnswer = Read(process, kickPointer, kickPacket.Length, "Kick packet");
+                uint kickResult = BitConverter.ToUInt32(kickAnswer, 20);
+                uint kickError = BitConverter.ToUInt32(kickAnswer, 24);
+                uint kickPid = BitConverter.ToUInt32(kickAnswer, 28);
+                uint hook = BitConverter.ToUInt32(kickAnswer, 32);
+                log("ETAP kick_bridge result=0x" + kickReturn.ToString("X8") + " packet=0x" +
+                    kickResult.ToString("X8") + " win32=" + kickError + " pid=" + kickPid +
+                    " hook_installed=" + hook + " kick_trial_enabled=" + kickTrialEnabled);
+                if (kickReturn != 0xF17AC176 || kickResult != kickReturn ||
+                    kickError != 0 || kickPid != (uint)target.Id ||
+                    hook != (kickTrialEnabled ? 1u : 0u))
+                    throw new InvalidOperationException("Kick native bridge FAIL; zostaw gre, zachowaj logi.");
+                return "PASS: DLL PID=" + pid + ", Kick " +
+                    (kickTrialEnabled ? "HOOK ZAINSTALOWANY (SKUTECZNOSC NIEPOTWIERDZONA)" : "OFF") +
+                    "; Auto Pickpocket adapter STARTING/READY";
             } finally {
+                if (kickPointer != IntPtr.Zero && kickSafe)
+                    VirtualFreeEx(process, kickPointer, UIntPtr.Zero, MemRelease);
                 if (probePointer != IntPtr.Zero && probeSafe)
                     VirtualFreeEx(process, probePointer, UIntPtr.Zero, MemRelease);
                 if (packetPointer != IntPtr.Zero && packetSafe)
