@@ -42,25 +42,78 @@ local function say(message)
     end
     return false
 end
+local lastPrecheck = nil
+local lastPrecheckAt = 0
+local function notePrecheck(reason)
+    if not kickRequests then return end
+    local now = GetTime()
+    if reason ~= lastPrecheck or now - lastPrecheckAt > 4 then
+        lastPrecheck, lastPrecheckAt = reason, now
+        say("KICK BLOCK: " .. reason)
+    end
+end
+local function kickDiagnostics()
+    local name = GetSpellInfo(1766)
+    local target = UnitExists("target") and UnitName("target") or "BRAK"
+    local cast,_,_,_,starts,ends,_,_,noKick = UnitCastingInfo("target")
+    local mode = "CAST"
+    if not cast then
+        cast,_,_,_,starts,ends,_,noKick = UnitChannelInfo("target")
+        mode = "CHANNEL"
+    end
+    local cdStart, cdDuration = GetSpellCooldown(1766)
+    local remaining = starts and ends and math.floor(ends - GetTime() * 1000) or -1
+    local range = name and IsSpellInRange(name, "target")
+    local usable, lacksResource = IsUsableSpell(1766)
+    say("DIAG addon=" .. (kickRequests and "TRIAL" or "OFF") ..
+        " class=" .. tostring(select(2, UnitClass("player"))) ..
+        " target=" .. tostring(target) ..
+        " hostile=" .. tostring(UnitExists("target") and UnitCanAttack("player", "target")) ..
+        " kick_name=" .. tostring(name) .. " range=" .. tostring(range) ..
+        " energy=" .. tostring(UnitPower("player", 3)) ..
+        " usable=" .. tostring(usable) ..
+        " lacks_resource=" .. tostring(lacksResource) ..
+        " cd_start=" .. tostring(cdStart) .. " cd_duration=" .. tostring(cdDuration) ..
+        " cast=" .. tostring(cast) .. " mode=" .. mode ..
+        " remaining_ms=" .. tostring(remaining) .. " noKick=" .. tostring(noKick))
+end
 -- UI-thread, opt-in diagnostic marker. DLL independently verifies the GUID
 -- and cast in the exact registered game client before attempting a Kick.
 local function requestNativeKick()
     if not kickRequests then return end
-    if select(2,UnitClass("player")) ~= "ROGUE" or UnitIsDeadOrGhost("player") then return end
+    if select(2,UnitClass("player")) ~= "ROGUE" or UnitIsDeadOrGhost("player") then
+        notePrecheck("wymagany zywy Rogue"); return
+    end
     if not UnitExists("target") or not UnitCanAttack("player","target") or
         UnitIsDeadOrGhost("target") then return end
-    local spellName = GetSpellInfo(1766)
-    if not spellName or IsSpellInRange(spellName,"target") ~= 1 then return end
-    if UnitPower("player",3) < 25 or not IsUsableSpell(1766) then return end
-    local cdStart,cdDuration = GetSpellCooldown(1766)
-    if not cdStart or (cdStart > 0 and cdDuration and cdStart + cdDuration > GetTime()) then return end
     local name,_,_,_,starts,ends,_,_,noKick = UnitCastingInfo("target")
     if not name then name,_,_,_,starts,ends,_,noKick = UnitChannelInfo("target") end
-    if not name or not starts or not ends or noKick then return end
+    if not name or not starts or not ends then return end
+    if noKick then notePrecheck("cast nieprzerywalny: " .. tostring(name)); return end
     local remaining = ends - GetTime()*1000
-    if remaining > 3000 or remaining <= 150 or starts >= ends then return end
+    if starts >= ends or remaining > 3000 or remaining <= 150 then
+        notePrecheck("poza oknem castu: pozostalo " .. tostring(math.floor(remaining)) .. " ms"); return
+    end
+    local spellName = GetSpellInfo(1766)
+    if not spellName then notePrecheck("brak wyuczonego Kick (ID 1766)"); return end
+    local range = IsSpellInRange(spellName,"target")
+    if range ~= 1 then
+        notePrecheck("Kick poza zasiegiem / brak danych range=" .. tostring(range)); return
+    end
+    local energy = UnitPower("player",3)
+    if energy < 25 then notePrecheck("za malo energii: " .. tostring(energy)); return end
+    local usable, lacksResource = IsUsableSpell(1766)
+    if not usable then
+        notePrecheck("Kick niegotowy: IsUsableSpell=false resource=" .. tostring(lacksResource)); return
+    end
+    local cdStart,cdDuration = GetSpellCooldown(1766)
+    if not cdStart or (cdStart > 0 and cdDuration and cdStart + cdDuration > GetTime()) then
+        notePrecheck("Kick ma cooldown: start=" .. tostring(cdStart) .. " dur=" .. tostring(cdDuration)); return
+    end
     local guid=UnitGUID("target")
-    if not guid or not string.match(guid,"^0x%x+$") then return end
+    if not guid or not string.match(guid,"^0x%x+$") then
+        notePrecheck("brak poprawnego GUID celu"); return
+    end
     local token=guid..":"..tostring(starts)..":"..tostring(ends)
     if lastKickRequest==token then return end
     lastKickRequest=token
@@ -154,8 +207,10 @@ SlashCmdList["FROSTMOURNECASTPROBE"] = function(msg)
     elseif msg == "off" then
         running = false
         say("OFF")
+    elseif msg == "diag" then
+        kickDiagnostics()
     else
-        say("Status=" .. (running and "ON" or "OFF") .. " | Kick trial=" .. (kickRequests and "ON (niepotwierdzony)" or "OFF") .. " | /fmcast on | /fmcast off")
+        say("Status=" .. (running and "ON" or "OFF") .. " | Kick trial=" .. (kickRequests and "ON (niepotwierdzony)" or "OFF") .. " | /fmcast on | /fmcast off | /fmcast diag")
         if running then
             local text = sample("target")
             if text then say(text) else say("No current target cast.") end
