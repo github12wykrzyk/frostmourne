@@ -41,7 +41,7 @@ def main() -> None:
                      if s.VirtualAddress <= va-base <
                      s.VirtualAddress + max(s.Misc_VirtualSize,s.SizeOfRawData)), None)
     def name(section):
-        return section.Name.rstrip(b"\\0").decode("ascii", "replace") if section else None
+        return section.Name.rstrip(b"\0").decode("ascii", "replace") if section else None
     def read(va: int, length: int) -> bytes:
         s = sec(va)
         if not s: return b""
@@ -69,7 +69,7 @@ def main() -> None:
         }
     }
     for api in LOOKUP:
-        needle = api.encode("ascii")+b"\\0"
+        needle = api.encode("ascii")+b"\0"
         matches = []
         begin = 0
         while True:
@@ -107,7 +107,7 @@ def main() -> None:
     dest = ROOT/"dist"
     dest.mkdir(exist_ok=True)
     out = dest/"auto-pickpocket-static-audit.json"
-    out.write_text(json.dumps(report,indent=2,sort_keys=True)+"\\n",encoding="utf-8")
+    out.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     print("AP_AUDIT client_sha256="+sha)
     print("AP_AUDIT action_adapter=NOT_VALIDATED; actual_pickpocket=NOT_IMPLEMENTED")
     print("AP_AUDIT report="+str(out))
