@@ -6,7 +6,7 @@ REQUIRED = [
     "reference/client/reference.json","reference/client/README.md","reference/client/pe_audit.json",
     "docs/CLIENT_PE_AUDIT.md","docs/LOADER_UPDATER_ARCHITECTURE.md","tools/audit_reference_client.py",
     "tools/verify_repo.py","tools/verify_current.py","tools/verify_reference_client.py","tools/make_runtime_package.py",
-    "docs/WORKFLOW.md","docs/MANIFESTS.md","docs/BASELINES.md","docs/UPDATER.md",
+    "docs/WORKFLOW.md","docs/DLL_DELIVERY.md","docs/MANIFESTS.md","docs/BASELINES.md","docs/UPDATER.md",
     "src/updater/core.py","src/updater/app.py","src/updater/launcher.py","updates/work.json",
     ".github/workflows/verify.yml"
 ]
@@ -60,6 +60,8 @@ def main():
             errors.append("reference PE audit has no 3.3.5.12340 fixed version resource")
     except Exception as e:
         errors.append(f"reference PE audit cannot be read: {e}")
+    if idx.get("entrypoints", {}).get("dll_delivery") != "docs/DLL_DELIVERY.md":
+        errors.append("AI_INDEX must reference mandatory DLL-first delivery contract")
     if cur.get("runtime_manifest") != "runtime/current.json":
         errors.append("CURRENT.json must point to runtime/current.json")
     baseline_path = cur.get("baseline_manifest")
