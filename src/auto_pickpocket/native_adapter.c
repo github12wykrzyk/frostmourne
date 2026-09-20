@@ -10,10 +10,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "native_adapter.h"
 
 #define FM_WM_TICK (WM_APP + 0x52Au)
 #define FM_CAST_VA 0x0080DA40u
+/* WoW 3.3.5a 12340: check the exact client and the live object chain
+ * before requesting a cast. Candidate flags below are EXPERIMENTAL,
+ * not evidence of loot, hostile reaction, spell range or clear LOS. */
+#define FM_CONN_VA 0x00C79CE0u
+#define FM_MANAGER_OFFSET 0x2ED0u
+#define FM_FIRST_OFFSET 0xACu
+#define FM_PLAYER_GUID_OFFSET 0xC0u
+#define FM_NEXT_OFFSET 0x3Cu
+#define FM_GUID_OFFSET 0x30u
+#define FM_TYPE_OFFSET 0x14u
+#define FM_FIELDS_OFFSET 0x08u
+#define FM_X_OFFSET 0x798u
+#define FM_Y_OFFSET 0x79Cu
+#define FM_Z_OFFSET 0x7A0u
+#define FM_SCAN_LIMIT 2048u
 #define FM_LUA_STATE_VA 0x00D3F78Cu
 #define FM_LUA_LOAD_VA 0x0084F860u
 #define FM_LUA_PCALL_VA 0x0084EC50u
@@ -109,17 +125,16 @@ static const char g_preflight[] =
     "if UnitIsDeadOrGhost('player') or UnitAffectingCombat('player') "
     "or UnitCastingInfo('player') or UnitChannelInfo('player') "
     "or not IsStealthed() then return 'IDLE|'..prefix end;"
+    "local spell=GetSpellInfo(921);"
+    "if not spell or not IsUsableSpell(921) then return 'IDLE|'..prefix end;"
     "if not UnitExists('target') or UnitIsPlayer('target') "
     "or UnitIsDeadOrGhost('target') or not UnitCanAttack('player','target') "
-    "or not UnitIsVisible('target') then return 'WAIT|'..prefix end;"
+    "or not UnitIsVisible('target') then return 'SCAN|'..prefix end;"
     "local typ=UnitCreatureType('target');"
-    "if typ~='Humanoid' and typ~='Undead' then return 'WAIT|'..prefix end;"
-    "local spell=GetSpellInfo(921);"
-    "local usable=IsUsableSpell(921);"
-    "if not spell or not usable or IsSpellInRange(spell,'target')~=1 "
-    "then return 'WAIT|'..prefix end;"
+    "if typ~='Humanoid' and typ~='Undead' then return 'SCAN|'..prefix end;"
+    "if IsSpellInRange(spell,'target')~=1 then return 'SCAN|'..prefix end;"
     "local guid=UnitGUID('target');"
-    "if not guid then return 'WAIT|'..prefix end;"
+    "if not guid then return 'SCAN|'..prefix end;"
     "return 'OK|'..prefix..tostring(guid);";
 
 /* All Lua state calls occur on the owning game window thread, never in worker.
@@ -192,13 +207,119 @@ static FM_AP_CAST_RESULT fm_native_cast(void *ctx, uint64_t guid) {
     return FM_AP_ISSUED;
 }
 
+
+/* Enumerate current-object GUIDs without retaining object pointers across
+ * ticks. ReadProcessMemory bounds every dereference; an invalid/cyclic list
+ * disables this snapshot rather than extending a scan indefinitely. */
+static int fm_scan_nearby(uint64_t player_guid, FM_AP_UNIT *out,
+                          size_t capacity, size_t *count) {
+    uint32_t connection, manager, first, cur, player_obj = 0;
+    uint64_t manager_guid, object_guid;
+    uint32_t player_type, player_fields, player_faction;
+    float px, py, pz;
+    unsigned pass, steps;
+    *count = 0;
+    if (!fm_safe_read(FM_CONN_VA, &connection, sizeof(connection)) ||
+        connection < 0x10000u || connection > 0x7FFF0000u ||
+        !fm_safe_read((uintptr_t)connection + FM_MANAGER_OFFSET, &manager, sizeof(manager)) ||
+        manager < 0x10000u || manager > 0x7FFF0000u ||
+        !fm_safe_read((uintptr_t)manager + FM_PLAYER_GUID_OFFSET, &manager_guid, sizeof(manager_guid)) ||
+        manager_guid != player_guid ||
+        !fm_safe_read((uintptr_t)manager + FM_FIRST_OFFSET, &first, sizeof(first)))
+        return 0;
+    /* Pass 0 finds the real player and gets the authoritative position.
+       Pass 1 collects nearby NPC objects from the same manager. */
+    for (pass = 0; pass < 2; ++pass) {
+        cur = first;
+        for (steps = 0; cur && steps < FM_SCAN_LIMIT; ++steps) {
+            uint32_t next, kind, fields, health, faction, flags, entry;
+            float x, y, z;
+            double dx, dy, dz, distance_squared;
+            FM_AP_UNIT unit;
+            size_t j;
+            if (cur < 0x10000u || cur > 0x7FFF0000u || (cur & 3u) ||
+                !fm_safe_read((uintptr_t)cur + FM_NEXT_OFFSET, &next, sizeof(next)) ||
+                !fm_safe_read((uintptr_t)cur + FM_GUID_OFFSET, &object_guid, sizeof(object_guid)) ||
+                next == cur) return 0;
+            if (pass == 0) {
+                if (object_guid == player_guid) player_obj = cur;
+                cur = next;
+                continue;
+            }
+            if (object_guid == player_guid ||
+                (object_guid >> 48) != 0xF130u ||
+                !fm_safe_read((uintptr_t)cur + FM_TYPE_OFFSET, &kind, sizeof(kind)) ||
+                kind != 3u ||
+                !fm_safe_read((uintptr_t)cur + FM_FIELDS_OFFSET, &fields, sizeof(fields)) ||
+                fields < 0x10000u || fields > 0x7FFF0000u ||
+                !fm_safe_read((uintptr_t)fields + 24u*4u, &health, sizeof(health)) || !health ||
+                !fm_safe_read((uintptr_t)fields + 55u*4u, &faction, sizeof(faction)) ||
+                !faction || faction == player_faction ||
+                !fm_safe_read((uintptr_t)fields + 59u*4u, &flags, sizeof(flags)) ||
+                (flags & 0x00000002u) ||
+                !fm_safe_read((uintptr_t)fields + 3u*4u, &entry, sizeof(entry)) || !entry ||
+                !fm_safe_read((uintptr_t)cur + FM_X_OFFSET, &x, sizeof(x)) ||
+                !fm_safe_read((uintptr_t)cur + FM_Y_OFFSET, &y, sizeof(y)) ||
+                !fm_safe_read((uintptr_t)cur + FM_Z_OFFSET, &z, sizeof(z))) {
+                cur = next;
+                continue;
+            }
+            dx = (double)x - px;
+            dy = (double)y - py;
+            dz = (double)z - pz;
+            distance_squared = dx*dx + dy*dy + dz*dz;
+            if (!(distance_squared >= 0.0 && distance_squared <= 25.0)) {
+                cur = next;
+                continue;
+            }
+            memset(&unit, 0, sizeof(unit));
+            unit.guid = object_guid;
+            unit.npc_entry = entry;
+            unit.source_mask = FM_AP_NEARBY;
+            unit.is_npc = unit.alive = 1;
+            /* EXPERIMENT ONLY: these are candidates, not a native eligibility
+             * verdict. The game/server rejects invalid casts. */
+            unit.hostile = unit.eligible_known = unit.pickpocketable = 1;
+            unit.in_spell_range = unit.line_of_sight = unit.native_can_cast = 1;
+            unit.distance_yards = sqrt(distance_squared);
+            for (j = 0; j < *count; ++j)
+                if (out[j].guid == object_guid) break;
+            if (j == *count && *count < capacity) {
+                j = (*count)++;
+                while (j && out[j-1].distance_yards > unit.distance_yards) {
+                    out[j] = out[j-1];
+                    --j;
+                }
+                out[j] = unit;
+            }
+            cur = next;
+        }
+        if (cur || (pass == 0 && !player_obj)) return 0;
+        if (pass == 0) {
+            if (!fm_safe_read((uintptr_t)player_obj + FM_TYPE_OFFSET, &player_type, sizeof(player_type)) ||
+                player_type != 4u ||
+                !fm_safe_read((uintptr_t)player_obj + FM_FIELDS_OFFSET, &player_fields, sizeof(player_fields)) ||
+                player_fields < 0x10000u || player_fields > 0x7FFF0000u ||
+                !fm_safe_read((uintptr_t)player_fields + 55u*4u, &player_faction, sizeof(player_faction)) ||
+                !fm_safe_read((uintptr_t)player_obj + FM_X_OFFSET, &px, sizeof(px)) ||
+                !fm_safe_read((uintptr_t)player_obj + FM_Y_OFFSET, &py, sizeof(py)) ||
+                !fm_safe_read((uintptr_t)player_obj + FM_Z_OFFSET, &pz, sizeof(pz)) ||
+                !(px > -25000.0f && px < 25000.0f &&
+                  py > -25000.0f && py < 25000.0f &&
+                  pz > -25000.0f && pz < 25000.0f)) return 0;
+        }
+    }
+    return 1;
+}
+
 static void fm_tick_on_window_thread(void) {
     char answer[192], banner[64], *parts[4] = {NULL, NULL, NULL, NULL};
     char *context = NULL, *item;
     uint64_t player, target;
     unsigned long area;
     char *end;
-    FM_AP_UNIT u;
+    FM_AP_UNIT units[FM_AP_MAX_UNITS];
+    size_t unit_count = 0;
     FM_AP_FRAME f;
     DWORD now = GetTickCount();
     int i;
@@ -240,39 +361,43 @@ static void fm_tick_on_window_thread(void) {
                                     FM_AP_NATIVE_STARTING) == FM_AP_NATIVE_STARTING) {
         FM_AP_CONFIG config = g_engine->config;
         config.enabled = 1;
-        config.source_mask = FM_AP_TARGET;
+        config.source_mask = FM_AP_TARGET | FM_AP_NEARBY;
         fm_ap_set_config(g_engine, &config);
-        fm_log("event=ADAPTER_READY adapter=WINDOW_THREAD selected_target_only=1 auto_enabled=1");
+        fm_log("event=ADAPTER_READY adapter=WINDOW_THREAD nearby_scan=EXPERIMENTAL auto_enabled=1");
         /* Message is printed only after a successful in-game snapshot. */
-        (void)fm_lua_query("DEFAULT_CHAT_FRAME:AddMessage('FROSTMOURNE Auto Pickpocket: ACTIVE') return 'OK'",
+        (void)fm_lua_query("DEFAULT_CHAT_FRAME:AddMessage('FROSTMOURNE Auto Pickpocket: EXPERIMENTAL NEARBY SCAN') return 'OK'",
                            banner, sizeof(banner));
     }
     if (g_last_pending && g_engine->pending_guid == 0) {
         fm_log("event=PICKPOCKET_RESULT outcome=UNKNOWN reason=no_correlated_server_loot_event");
         g_last_pending = 0;
     }
-    memset(&u, 0, sizeof(u));
     memset(&f, 0, sizeof(f));
     f.world_epoch = g_world_epoch;
     f.game_ready = 1;
     f.adapter_verified = 1; /* Exact running image, cast prologue, Lua snapshot, window-thread gate. */
     f.is_rogue = 1;
     f.player_alive = 1;
-    f.stealthed = strcmp(parts[0], "OK") == 0 || strcmp(parts[0], "WAIT") == 0;
+    f.stealthed = strcmp(parts[0], "OK") == 0 || strcmp(parts[0], "SCAN") == 0;
     f.in_combat = 0;
     f.player_busy = 0;
     f.pickpocket_available = 1;
+    /* Fail closed until the exact-client object manager and local GUID agree. */
+    if (f.stealthed && !fm_scan_nearby(player, units, FM_AP_MAX_UNITS, &unit_count)) {
+        fm_log("event=NEARBY_SCAN_NOT_READY action=SKIPPED");
+        return;
+    }
     if (strcmp(parts[0], "OK") == 0 && parts[3] &&
         fm_parse_guid(parts[3], &target) && target != player) {
-        u.guid = target;
-        u.source_mask = FM_AP_TARGET;
-        u.is_npc = u.hostile = u.alive = 1;
-        u.eligible_known = u.pickpocketable = 1; /* Lua creature-type proxy; client decides actual eligibility. */
-        u.in_spell_range = u.line_of_sight = u.native_can_cast = 1;
-        u.distance_yards = 0.0; /* Actual spell-range check was done by Lua, not by this placeholder distance. */
-        f.units = &u;
-        f.unit_count = 1;
+        size_t j;
+        for (j = 0; j < unit_count; ++j)
+            if (units[j].guid == target) {
+                units[j].source_mask |= FM_AP_TARGET;
+                break;
+            }
     }
+    f.units = units;
+    f.unit_count = unit_count;
     if (fm_ap_tick(g_engine, &f, (uint64_t)now, fm_native_cast, NULL))
         g_last_pending = g_engine->pending_guid;
 }
@@ -310,7 +435,7 @@ static DWORD WINAPI fm_native_worker(LPVOID parameter) {
     LONG_PTR old;
     DWORD i;
     (void)parameter;
-    fm_log("event=ADAPTER_START selected_target_only=1 phase=WAITING_FOR_WINDOW");
+    fm_log("event=ADAPTER_START nearby_scan=EXPERIMENTAL phase=WAITING_FOR_WINDOW");
     if (!fm_exact_cast_gate()) {
         fm_log("event=CAST_GATE_FAIL expected_prologue_or_image_mismatch gameplay_actions=DISABLED");
         InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
