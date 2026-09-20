@@ -2,6 +2,29 @@
 
 Target: the exact registered WoW 3.3.5a build 12340 x86 client, SHA256 `edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd`.
 
+## Auto Pickpocket in-process diagnostic (NOT gameplay)
+
+This experimental ZIP now contains an x86 FrostmourneBootstrap.dll linked with
+the client-independent Auto Pickpocket decision core. After the existing ABI and
+PID checks, the loader invokes `Frostmourne_GetAutoPickpocketStatus` inside the
+just-launched WoW process. Expected result: `AP CORE=READY`,
+`adapter=NIEZAIMPLEMENTOWANY`, `gameplay_actions=WYLACZONE`. The bootstrap log
+also records `auto_pickpocket_core=READY adapter=ABSENT gameplay_actions=DISABLED`.
+These strings **do not** mean nearby NPCs have been discovered, Pick Pocket was
+cast, or game-client functions were validated. The DLL contains no native game
+adapter, no automated targeting, no game memory reads and no gameplay actions.
+Do not try to use it as a working Auto Pickpocket feature or modify game settings
+to make it cast. A successful result tests only in-process initialization of the
+core and the matching ABI/status export.
+
+For this experiment, extract the complete new ZIP outside the game directory
+and use its FrostmourneGui.exe, FrostmourneBootstrap.dll and bootstrap.sha256
+together. Do not combine the new DLL with a previously downloaded loader or old
+SHA256 pin. The existing GUI loader intentionally rejects external/unpinned DLLs.
+One game launch with a valid PID, the `auto_pickpocket_core=PASS` GUI log
+and the matching `bootstrap-<PID>.log` is sufficient; **no NPC test is expected
+to succeed**. CI cannot perform the local in-game test.
+
 ## Runtime behavior
 
 The existing WinForms GUI accepts an executable with any `.exe` filename, including a renamed Wow.exe, but requires the **same exact registered client bytes** (x86 PE, 7,704,216-byte size, build 12340 version resource and pinned SHA256). Renaming a different launcher or executable does not bypass client verification. The GUI verifies the bundled FrostmourneBootstrap.dll (x86 PE, size, exact SHA256), starts the selected client through Process.Start and identifies its PID. With the package bootstrap enabled, the GUI performs **one explicit standard Windows remote LoadLibraryW attempt** on the exact process that it launched, then resolves and calls Frostmourne_GetAbi and Frostmourne_Initialize within that process. It checks the module's loaded path and base address, ABI major/minor, the initialization packet, Win32 result and DLL-observed PID. Each stage is logged independently; a successful game launch is NOT evidence that the DLL loaded or initialized.
