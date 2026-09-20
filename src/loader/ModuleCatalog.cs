@@ -156,10 +156,48 @@ namespace FrostmourneGui {
                 string targetRoot = Path.Combine(gameDirectory, "Interface", "AddOns");
                 string target = SafeFile(targetRoot, asset.install_path);
                 string source = SafeFile(Path.GetDirectoryName(m.Path), asset.path);
-                if (File.Exists(target) && !String.Equals(Verify.Hash(target), asset.sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Istniejacy plik dodatku wymaga recznej migracji: " + target);
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
-                if (!File.Exists(target)) File.Copy(source, target, false);
+                bool exists = File.Exists(target);
+                if (exists && !String.Equals(Verify.Hash(target), asset.sha256, StringComparison.OrdinalIgnoreCase)) {
+                    // Only migrate known legacy FrostmourneCastProbe files. Other addons and
+                    // user-modified files are never silently replaced or deleted.
+                    string name = Path.GetFileName(target);
+                    bool knownPath = String.Equals(
+                        Path.GetFileName(Path.GetDirectoryName(target)), "FrostmourneCastProbe",
+                        StringComparison.OrdinalIgnoreCase) &&
+                        String.Equals(m.Id, "frostmourne-bootstrap", StringComparison.OrdinalIgnoreCase);
+                    string existing = File.ReadAllText(target);
+                    bool knownLua = String.Equals(name, "FrostmourneCastProbe.lua", StringComparison.OrdinalIgnoreCase) &&
+                        existing.Contains("FROSTMOURNE / WoW 3.3.5a") &&
+                        existing.Contains("SLASH_FROSTMOURNECASTPROBE1");
+                    bool knownToc = String.Equals(name, "FrostmourneCastProbe.toc", StringComparison.OrdinalIgnoreCase) &&
+                        existing.Contains("## Title: FrostmourneCastProbe") &&
+                        existing.Contains("FrostmourneCastProbe.lua");
+                    if (!knownPath || (!knownLua && !knownToc))
+                        throw new InvalidDataException("Obcy lub zmodyfikowany plik dodatku; nie nadpisuje: " + target);
+                    string backup = target + ".fmbackup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                    string staged = target + ".fmstage-" + Guid.NewGuid().ToString("N");
+                    try {
+                        File.Copy(source, staged, false);
+                        if (!String.Equals(Verify.Hash(staged), asset.sha256, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException("SHA256 przygotowanego dodatku niezgodne: " + name);
+                        // Atomic replacement: File.Replace produces a backup of the exact previous file.
+                        File.Replace(staged, target, backup);
+                        log("ASSET MIGRATION previous_file_backup=" + backup);
+                    } finally {
+                        if (File.Exists(staged)) File.Delete(staged);
+                    }
+                } else if (!exists) {
+                    string staged = target + ".fmstage-" + Guid.NewGuid().ToString("N");
+                    try {
+                        File.Copy(source, staged, false);
+                        if (!String.Equals(Verify.Hash(staged), asset.sha256, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException("SHA256 przygotowanego dodatku niezgodne: " + Path.GetFileName(target));
+                        File.Move(staged, target);
+                    } finally {
+                        if (File.Exists(staged)) File.Delete(staged);
+                    }
+                }
                 if (!String.Equals(Verify.Hash(target), asset.sha256, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("Nieudana instalacja dodatku " + target);
                 log("ASSET INSTALL verified " + target);
