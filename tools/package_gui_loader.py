@@ -56,7 +56,7 @@ def main() -> int:
         expected = ("CreateRemoteThread", "WriteProcessMemory", "VirtualAllocEx",
                     "LoadLibraryW", "Frostmourne_Initialize", "Frostmourne_GetAbi",
                     "GetExitCodeThread", "observed_pid",
-                    "Frostmourne_GetAutoPickpocketStatus", "adapter=NIEZAIMPLEMENTOWANY",
+                    "Frostmourne_GetAutoPickpocketStatus", "auto_pickpocket_native=PASS",
                     "Frostmourne_ProbeInterruptBindings", "live_cast=NOT_READ")
         if not all(name in remote for name in expected):
             raise ValueError("GUI missing required explicit in-process loading/ABI diagnostics")
