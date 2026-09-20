@@ -1,0 +1,373 @@
+/*
+ * FROSTMOURNE / WoW 3.3.5a 12340 x86: one selected-NPC experiment.
+ * External reference: AzDeltaQQ/WotLKRotations game_actions.cpp and offsets.h.
+ * This adapter does not claim server-confirmed pickpocket or nearby enumeration.
+ * The window-thread dispatch intentionally avoids casting on a loader-created thread.
+ */
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "native_adapter.h"
+
+#define FM_WM_TICK (WM_APP + 0x52Au)
+#define FM_CAST_VA 0x0080DA40u
+#define FM_LUA_STATE_VA 0x00D3F78Cu
+#define FM_LUA_LOAD_VA 0x0084F860u
+#define FM_LUA_PCALL_VA 0x0084EC50u
+#define FM_LUA_GETTOP_VA 0x0084DBD0u
+#define FM_LUA_SETTOP_VA 0x0084DBF0u
+#define FM_LUA_TOSTRING_VA 0x0084E0E0u
+
+typedef struct FM_LUA_STATE FM_LUA_STATE;
+typedef int (__cdecl *FM_LUA_LOAD)(FM_LUA_STATE*, const char*, size_t, const char*);
+typedef int (__cdecl *FM_LUA_PCALL)(FM_LUA_STATE*, int, int, int);
+typedef int (__cdecl *FM_LUA_GETTOP)(FM_LUA_STATE*);
+typedef void (__cdecl *FM_LUA_SETTOP)(FM_LUA_STATE*, int);
+typedef const char *(__cdecl *FM_LUA_TOSTRING)(FM_LUA_STATE*, int, size_t*);
+typedef char (__cdecl *FM_CAST)(int, int, uint64_t, char);
+
+static FM_AP_ENGINE *g_engine;
+static volatile LONG g_stop;
+static volatile LONG g_status = FM_AP_NATIVE_STARTING;
+static volatile LONG g_busy;
+static volatile LONG g_tick_posted;
+static HWND g_window;
+static WNDPROC g_previous;
+static HANDLE g_thread;
+static uint64_t g_world_epoch = 1u;
+static uint64_t g_player_guid;
+static unsigned long g_map_id;
+static DWORD g_last_snapshot;
+static uint64_t g_last_pending;
+static DWORD g_action_thread_id;
+
+/* From tools/audit_interrupt_bridge.py run 35478822571, exact registered image.
+ * x86 uint64_t uses two stack slots: four C parameters occupy twenty bytes. */
+static const unsigned char g_cast_prologue[] = {
+    0x55,0x8B,0xEC,0xE8,0x48,0x5D,0xCC,0xFF,
+    0x68,0xA0,0x00,0x00,0x00,0x68,0x40,0x23
+};
+
+static void fm_log(const char *message) {
+    char dir[MAX_PATH], logs[MAX_PATH], path[MAX_PATH], line[512];
+    DWORD size, count;
+    HANDLE file;
+    size = GetEnvironmentVariableA("LOCALAPPDATA", dir, MAX_PATH);
+    if (!size || size >= MAX_PATH || strlen(dir) > MAX_PATH - 100) return;
+    if (sprintf_s(logs, sizeof(logs), "%s\\Frostmourne", dir) < 0) return;
+    CreateDirectoryA(logs, NULL);
+    if (strcat_s(logs, sizeof(logs), "\\logs")) return;
+    CreateDirectoryA(logs, NULL);
+    if (sprintf_s(path, sizeof(path), "%s\\auto-pickpocket-%lu.log",
+                  logs, (unsigned long)GetCurrentProcessId()) < 0) return;
+    if (sprintf_s(line, sizeof(line), "tick=%lu thread=%lu %s\r\n",
+                  (unsigned long)GetTickCount(),
+                  (unsigned long)GetCurrentThreadId(), message) < 0) return;
+    file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+                       OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return;
+    WriteFile(file, line, (DWORD)strlen(line), &count, NULL);
+    CloseHandle(file);
+    OutputDebugStringA(line);
+}
+
+static int fm_safe_read(uintptr_t address, void *buffer, size_t bytes) {
+    SIZE_T copied = 0;
+    return ReadProcessMemory(GetCurrentProcess(), (LPCVOID)address,
+                             buffer, bytes, &copied) && copied == bytes;
+}
+
+static int fm_executable(uintptr_t address) {
+    MEMORY_BASIC_INFORMATION m;
+    DWORD access;
+    if (!VirtualQuery((LPCVOID)address, &m, sizeof(m)) || m.State != MEM_COMMIT)
+        return 0;
+    access = m.Protect & 0xffu;
+    return access == PAGE_EXECUTE || access == PAGE_EXECUTE_READ ||
+           access == PAGE_EXECUTE_READWRITE || access == PAGE_EXECUTE_WRITECOPY;
+}
+
+static int fm_exact_cast_gate(void) {
+    unsigned char actual[sizeof(g_cast_prologue)];
+    return (uintptr_t)GetModuleHandleW(NULL) == 0x00400000u &&
+           fm_executable(FM_CAST_VA) &&
+           fm_safe_read(FM_CAST_VA, actual, sizeof(actual)) &&
+           memcmp(actual, g_cast_prologue, sizeof(actual)) == 0;
+}
+
+/* Read-only state and an unprotected preflight. No Lua spell cast command.
+ * 3.3.5 uses the localized spell name for IsSpellInRange. */
+static const char g_preflight[] =
+    "local _,class=UnitClass('player');"
+    "if class~='ROGUE' or not UnitGUID('player') then return 'OFF' end;"
+    "local id=UnitGUID('player');"
+    "local map=GetCurrentMapAreaID and GetCurrentMapAreaID() or 0;"
+    "local prefix=tostring(id)..'|'..tostring(map)..'|';"
+    "if UnitIsDeadOrGhost('player') or UnitAffectingCombat('player') "
+    "or UnitCastingInfo('player') or UnitChannelInfo('player') "
+    "or not IsStealthed() then return 'IDLE|'..prefix end;"
+    "if not UnitExists('target') or UnitIsPlayer('target') "
+    "or UnitIsDeadOrGhost('target') or not UnitCanAttack('player','target') "
+    "or not UnitIsVisible('target') then return 'WAIT|'..prefix end;"
+    "local typ=UnitCreatureType('target');"
+    "if typ~='Humanoid' and typ~='Undead' then return 'WAIT|'..prefix end;"
+    "local spell=GetSpellInfo(921);"
+    "local usable=IsUsableSpell(921);"
+    "if not spell or not usable or IsSpellInRange(spell,'target')~=1 "
+    "then return 'WAIT|'..prefix end;"
+    "local guid=UnitGUID('target');"
+    "if not guid then return 'WAIT|'..prefix end;"
+    "return 'OK|'..prefix..tostring(guid);";
+
+/* All Lua state calls occur on the owning game window thread, never in worker.
+ * Any access violation disables the feature for the entire process. */
+static int fm_lua_query(const char *script, char *result, size_t capacity) {
+    FM_LUA_STATE *state = NULL;
+    FM_LUA_GETTOP gettop = (FM_LUA_GETTOP)FM_LUA_GETTOP_VA;
+    FM_LUA_LOAD load = (FM_LUA_LOAD)FM_LUA_LOAD_VA;
+    FM_LUA_PCALL pcall = (FM_LUA_PCALL)FM_LUA_PCALL_VA;
+    FM_LUA_TOSTRING tostring = (FM_LUA_TOSTRING)FM_LUA_TOSTRING_VA;
+    FM_LUA_SETTOP settop = (FM_LUA_SETTOP)FM_LUA_SETTOP_VA;
+    int top, status, ok = 0;
+    size_t length = 0;
+    const char *value;
+    result[0] = '\0';
+    if (!fm_safe_read(FM_LUA_STATE_VA, &state, sizeof(state)) || !state ||
+        !fm_executable(FM_LUA_LOAD_VA) || !fm_executable(FM_LUA_PCALL_VA) ||
+        !fm_executable(FM_LUA_GETTOP_VA) || !fm_executable(FM_LUA_SETTOP_VA) ||
+        !fm_executable(FM_LUA_TOSTRING_VA)) return 0;
+    __try {
+        top = gettop(state);
+        if (top < 0 || top > 2048) return 0;
+        status = load(state, script, strlen(script), "=FrostmourneAP");
+        if (status == 0) status = pcall(state, 0, 1, 0);
+        if (status == 0 && gettop(state) == top + 1) {
+            value = tostring(state, -1, &length);
+            if (value && length && length < capacity) {
+                memcpy(result, value, length);
+                result[length] = '\0';
+                ok = 1;
+            }
+        }
+        settop(state, top);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        fm_log("event=LUA_EXCEPTION adapter=FAILED gameplay_actions=DISABLED");
+        InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
+        ok = 0;
+    }
+    return ok;
+}
+
+static int fm_parse_guid(const char *str, uint64_t *guid) {
+    char *end;
+    unsigned __int64 parsed;
+    if (!str || !*str) return 0;
+    parsed = _strtoui64(str, &end, 0);
+    if (!parsed || !end || *end) return 0;
+    *guid = (uint64_t)parsed;
+    return 1;
+}
+
+static FM_AP_CAST_RESULT fm_native_cast(void *ctx, uint64_t guid) {
+    char result;
+    char logline[180];
+    (void)ctx;
+    if (!guid || !fm_exact_cast_gate() ||
+        GetCurrentThreadId() != g_action_thread_id ||
+        InterlockedCompareExchange(&g_stop, 0, 0)) return FM_AP_NOT_ISSUED;
+    __try {
+        result = ((FM_CAST)FM_CAST_VA)(921, 0, guid, 0);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        fm_log("event=CAST_EXCEPTION adapter=FAILED gameplay_actions=DISABLED");
+        InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
+        return FM_AP_NOT_ISSUED;
+    }
+    if (sprintf_s(logline, sizeof(logline),
+                  "event=PICKPOCKET_CAST_REQUEST spell=921 guid=0x%I64X native_return=%d outcome=UNCONFIRMED",
+                  (unsigned __int64)guid, (int)(unsigned char)result) >= 0) fm_log(logline);
+    /* Native return indicates local dispatch at most, NEVER successful loot. */
+    return FM_AP_ISSUED;
+}
+
+static void fm_tick_on_window_thread(void) {
+    char answer[192], *parts[4] = {NULL, NULL, NULL, NULL};
+    char *context = NULL, *item;
+    uint64_t player, target;
+    unsigned long area;
+    char *end;
+    FM_AP_UNIT u;
+    FM_AP_FRAME f;
+    DWORD now = GetTickCount();
+    int i;
+    if (InterlockedCompareExchange(&g_stop, 0, 0) ||
+        InterlockedCompareExchange(&g_status, 0, 0) == FM_AP_NATIVE_FAILED ||
+        !g_engine || !fm_exact_cast_gate()) return;
+    if (!fm_lua_query(g_preflight, answer, sizeof(answer))) {
+        if (g_last_snapshot && now - g_last_snapshot > 2000) {
+            fm_ap_reset_world(g_engine, ++g_world_epoch);
+            g_last_snapshot = 0;
+            InterlockedExchange(&g_status, FM_AP_NATIVE_STARTING);
+        }
+        return;
+    }
+    if (strcmp(answer, "OFF") == 0) {
+        if (g_last_snapshot) {
+            fm_ap_reset_world(g_engine, ++g_world_epoch);
+            g_last_snapshot = 0;
+            InterlockedExchange(&g_status, FM_AP_NATIVE_STARTING);
+        }
+        return;
+    }
+    item = strtok_s(answer, "|", &context);
+    for (i = 0; i < 4 && item; ++i) {
+        parts[i] = item;
+        item = strtok_s(NULL, "|", &context);
+    }
+    if (!parts[0] || !parts[1] || !parts[2] ||
+        !fm_parse_guid(parts[1], &player)) return;
+    area = strtoul(parts[2], &end, 10);
+    if (!end || *end) return;
+    if (g_player_guid != player || g_map_id != area) {
+        g_player_guid = player;
+        g_map_id = area;
+        fm_ap_reset_world(g_engine, ++g_world_epoch);
+    }
+    g_last_snapshot = now;
+    if (InterlockedCompareExchange(&g_status, FM_AP_NATIVE_READY,
+                                    FM_AP_NATIVE_STARTING) == FM_AP_NATIVE_STARTING) {
+        FM_AP_CONFIG config = g_engine->config;
+        config.enabled = 1;
+        config.source_mask = FM_AP_TARGET;
+        fm_ap_set_config(g_engine, &config);
+        fm_log("event=ADAPTER_READY adapter=WINDOW_THREAD selected_target_only=1 auto_enabled=1");
+        /* Message is printed only after a successful in-game snapshot. */
+        (void)fm_lua_query("DEFAULT_CHAT_FRAME:AddMessage('FROSTMOURNE Auto Pickpocket: ACTIVE') return 'OK'",
+                           answer, sizeof(answer));
+    }
+    if (g_last_pending && g_engine->pending_guid == 0) {
+        fm_log("event=PICKPOCKET_RESULT outcome=UNKNOWN reason=no_correlated_server_loot_event");
+        g_last_pending = 0;
+    }
+    memset(&u, 0, sizeof(u));
+    memset(&f, 0, sizeof(f));
+    f.world_epoch = g_world_epoch;
+    f.game_ready = 1;
+    f.adapter_verified = 1; /* Exact running image, cast prologue, Lua snapshot, window-thread gate. */
+    f.is_rogue = 1;
+    f.player_alive = 1;
+    f.stealthed = strcmp(parts[0], "OK") == 0 || strcmp(parts[0], "WAIT") == 0;
+    f.in_combat = 0;
+    f.player_busy = 0;
+    f.pickpocket_available = 1;
+    if (strcmp(parts[0], "OK") == 0 && parts[3] &&
+        fm_parse_guid(parts[3], &target) && target != player) {
+        u.guid = target;
+        u.source_mask = FM_AP_TARGET;
+        u.is_npc = u.hostile = u.alive = 1;
+        u.eligible_known = u.pickpocketable = 1; /* Lua creature-type proxy; client decides actual eligibility. */
+        u.in_spell_range = u.line_of_sight = u.native_can_cast = 1;
+        u.distance_yards = 0.0; /* Actual spell-range check was done by Lua, not by this placeholder distance. */
+        f.units = &u;
+        f.unit_count = 1;
+    }
+    if (fm_ap_tick(g_engine, &f, (uint64_t)now, fm_native_cast, NULL))
+        g_last_pending = g_engine->pending_guid;
+}
+
+static LRESULT CALLBACK fm_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    WNDPROC previous = g_previous;
+    if (message == FM_WM_TICK && hwnd == g_window) {
+        InterlockedExchange(&g_tick_posted, 0);
+        if (InterlockedCompareExchange(&g_busy, 1, 0) == 0) {
+            if (!g_action_thread_id) g_action_thread_id = GetCurrentThreadId();
+            fm_tick_on_window_thread();
+            InterlockedExchange(&g_busy, 0);
+        }
+        return 0;
+    }
+    return previous ? CallWindowProcW(previous, hwnd, message, wparam, lparam)
+                    : DefWindowProcW(hwnd, message, wparam, lparam);
+}
+
+typedef struct FM_FIND_WINDOW { DWORD pid; HWND hwnd; } FM_FIND_WINDOW;
+static BOOL CALLBACK fm_find_window(HWND hwnd, LPARAM parameter) {
+    FM_FIND_WINDOW *found = (FM_FIND_WINDOW*)parameter;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == found->pid && IsWindowVisible(hwnd) &&
+        GetWindow(hwnd, GW_OWNER) == NULL) {
+        found->hwnd = hwnd;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static DWORD WINAPI fm_native_worker(LPVOID parameter) {
+    FM_FIND_WINDOW window;
+    LONG_PTR old;
+    DWORD i;
+    (void)parameter;
+    fm_log("event=ADAPTER_START selected_target_only=1 phase=WAITING_FOR_WINDOW");
+    if (!fm_exact_cast_gate()) {
+        fm_log("event=CAST_GATE_FAIL expected_prologue_or_image_mismatch gameplay_actions=DISABLED");
+        InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
+        return 0;
+    }
+    for (i = 0; i < 240u && !InterlockedCompareExchange(&g_stop, 0, 0); ++i) {
+        window.pid = GetCurrentProcessId();
+        window.hwnd = NULL;
+        EnumWindows(fm_find_window, (LPARAM)&window);
+        if (window.hwnd) {
+            SetLastError(0);
+            old = SetWindowLongPtrW(window.hwnd, GWLP_WNDPROC, (LONG_PTR)fm_window_proc);
+            if (old) {
+                g_previous = (WNDPROC)old;
+                g_window = window.hwnd;
+                fm_log("event=WINDOW_THREAD_DISPATCH_INSTALLED phase=WAITING_FOR_ROGUE_LOGIN");
+                break;
+            }
+        }
+        Sleep(250);
+    }
+    if (!g_window) {
+        fm_log("event=WINDOW_NOT_FOUND adapter=FAILED gameplay_actions=DISABLED");
+        InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
+        return 0;
+    }
+    while (!InterlockedCompareExchange(&g_stop, 0, 0) &&
+           InterlockedCompareExchange(&g_status, 0, 0) != FM_AP_NATIVE_FAILED &&
+           IsWindow(g_window)) {
+        if (InterlockedCompareExchange(&g_tick_posted, 1, 0) == 0 &&
+            !PostMessageW(g_window, FM_WM_TICK, 0, 0)) InterlockedExchange(&g_tick_posted, 0);
+        Sleep(100);
+    }
+    /* This DLL stays loaded until the process exits. Never unload a live callback. */
+    if (!InterlockedCompareExchange(&g_stop, 0, 0) &&
+        InterlockedCompareExchange(&g_status, 0, 0) != FM_AP_NATIVE_FAILED) {
+        fm_log("event=GAME_WINDOW_LOST adapter=FAILED gameplay_actions=DISABLED");
+        InterlockedExchange(&g_status, FM_AP_NATIVE_FAILED);
+    }
+    return 0;
+}
+
+int fm_ap_native_start(FM_AP_ENGINE *engine) {
+    if (!engine || g_thread) return 0;
+    g_engine = engine;
+    g_stop = g_busy = g_tick_posted = 0;
+    g_status = FM_AP_NATIVE_STARTING;
+    g_thread = CreateThread(NULL, 0, fm_native_worker, NULL, 0, NULL);
+    return g_thread != NULL;
+}
+
+void fm_ap_native_stop(void) {
+    InterlockedExchange(&g_stop, 1);
+    if (g_engine) g_engine->config.enabled = 0;
+    /* Do not free the DLL's callback while it could be running. */
+}
+
+unsigned long fm_ap_native_status(void) {
+    return (unsigned long)InterlockedCompareExchange(&g_status, 0, 0);
+}
