@@ -189,7 +189,13 @@ namespace FrostmourneGui {
                 if (pid != (uint)target.Id)
                     throw new InvalidOperationException("PID w DLL rozni sie od uruchomionego Wow.exe");
                 log("ETAP potwierdzenie_PID_wewnatrz_DLL=PASS pid=" + pid);
-                return "PASS: FrostmourneBootstrap.dll w Wow.exe PID=" + pid + ", ABI=1.0";
+                uint apProbe = ExportRva(dll, "_Frostmourne_GetAutoPickpocketStatus@4");
+                uint apStatus = Invoke(process, Ptr(checked(loadedBase + apProbe)), IntPtr.Zero,
+                    "Frostmourne_GetAutoPickpocketStatus", log);
+                if (apStatus != 0x41500001)
+                    throw new InvalidOperationException("Auto Pickpocket CORE status FAIL: 0x" + apStatus.ToString("X8"));
+                log("ETAP auto_pickpocket_core=PASS status=IN_PROCESS_INERT adapter=NIEZAIMPLEMENTOWANY gameplay_actions=WYLACZONE pid=" + pid);
+                return "PASS: DLL w Wow.exe PID=" + pid + ", ABI=1.0, AP CORE=READY; BRAK ADAPTERA / bez okradania NPC";
             } finally {
                 if (packetPointer != IntPtr.Zero && packetSafe)
                     VirtualFreeEx(process, packetPointer, UIntPtr.Zero, MemRelease);
