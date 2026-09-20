@@ -68,6 +68,12 @@ jobs:
           if errorlevel 1 exit /b 1
           dist\FrostmourneGuiDebug.exe --self-test
           if errorlevel 1 exit /b 1
+      - name: Upload standalone Frostmourne x86 DLL for existing loader
+        uses: actions/upload-artifact@v4
+        with:
+          name: frostmourne-bootstrap-x86-dll-only
+          path: dist/FrostmourneBootstrap.dll
+          if-no-files-found: error
       - name: Upload independent GUI loader with test/debug DLLs
         uses: actions/upload-artifact@v4
         with:
