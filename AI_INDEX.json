@@ -15,7 +15,8 @@
     "runtime": "runtime/current.json",
     "workflow": "docs/WORKFLOW.md",
     "target_client": "reference/client/reference.json",
-    "updater_release": "updates/work.json"
+    "updater_release": "updates/work.json",
+    "dll_delivery": "docs/DLL_DELIVERY.md"
   },
   "modules": [
     {
@@ -94,6 +95,7 @@
     }
   ],
   "docs": [
+    "docs/DLL_DELIVERY.md",
     "docs/WORKFLOW.md",
     "docs/MANIFESTS.md",
     "docs/BASELINES.md",
