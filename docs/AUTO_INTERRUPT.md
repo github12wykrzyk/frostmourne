@@ -41,6 +41,23 @@ The experimental GUI-loader package now includes a read-only in-process Lua-bind
 fingerprint probe and a separate non-communicating Lua addon for observing actual casts.
 See docs/GUI_LOADER_TEST.md. No live-unit DLL adapter or automatic Kick exists.
 
+## ASAP test build and independent updater
+
+The experimental work-channel module defaults to ASAP: the Lua addon observes a
+fresh, interruptible target cast every 100 ms and submits a marker immediately,
+without waiting for the legacy loader's 800-ms remaining-time window. A rejected
+marker can be retried up to four times at least 150 ms apart while the SAME
+live cast and target remain valid. The native bridge independently checks the
+fresh GUID and cast immediately before an attempt, limits the remaining time to
+30 seconds, and retains a 150-ms end-of-cast margin and at-most-once action per
+GUID/cast. The old loader's "Pozostaly czas (ms)" control is not used by this
+ASAP module; it remains a legacy compatibility field until a separate loader
+GUI update. The addon must be explicitly enabled and the bootstrap module
+selected. `kick-<PID>.log` is created at native hook initialization and
+records either the received marker/rejection reason or the attempt. A hook
+or a cast attempt is NOT confirmation of the server interrupt. The actual
+`SPELL_INTERRUPT` combat log is required to claim gameplay success.
+
 ## 2026-09-20 experimental action-trial status
 
 The independent bootstrap native Kick bridge (src/auto_interrupt/kick_native_bridge.c)

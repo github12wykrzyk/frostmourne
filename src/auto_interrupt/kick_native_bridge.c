@@ -34,7 +34,7 @@ typedef void (__cdecl *FM_NATIVE_CAST)(unsigned spell, unsigned arg2,
 static volatile LONG g_installed = 0, g_in_hook = 0;
 static BYTE g_original[FM_TRAMP_SIZE];
 static FM_LUA_CFUNC g_original_func = NULL;
-static volatile DWORD g_max_remaining = 800, g_safety = 150;
+static volatile DWORD g_max_remaining = 30000, g_safety = 150;
 static unsigned __int64 g_last_guid = 0;
 static DWORD g_last_start = 0, g_last_end = 0, g_last_spell = 0;
 static WCHAR g_log_file[MAX_PATH];
@@ -109,27 +109,48 @@ static int process_request(const char *marker) {
     DWORD now, remaining;
     BYTE *object;
     if (!parse_request(marker,&expected_guid,&expected_start,&expected_end,&kick_spell) ||
-        InterlockedCompareExchange(&g_installed,0,0) != 1) return 0;
+        InterlockedCompareExchange(&g_installed,0,0) != 1) {
+        log_attempt("KICK_REJECT_MARKER_OR_NOT_ARMED",1766u,0,0,0);
+        return 0;
+    }
     /* On the same WoW Lua/UI call thread, resolve target identity again,
      * then read a fresh independent cast snapshot before issuing a cast. */
     if (!((FM_FIND_GUID)(ULONG_PTR)FM_UNIT_GUID)("target",&live_guid,0) ||
-        live_guid != expected_guid) return 0;
+        live_guid != expected_guid) {
+        log_attempt("KICK_REJECT_TARGET_GUID",kick_spell,0,expected_guid,0);
+        return 0;
+    }
     object = (BYTE *)((FM_FIND_UNIT)(ULONG_PTR)FM_UNIT_POINTER)("target");
     if (!object ||
         !safe_read(object+0xA6C, &live[0], sizeof(DWORD)) ||
         !safe_read(object+0xA78, &live[1], sizeof(DWORD)) ||
-        !safe_read(object+0xA7C, &live[2], sizeof(DWORD))) return 0;
+        !safe_read(object+0xA7C, &live[2], sizeof(DWORD))) {
+        log_attempt("KICK_REJECT_LIVE_OBJECT_READ",kick_spell,0,live_guid,0);
+        return 0;
+    }
     now = ((FM_TIME_NOW)(ULONG_PTR)FM_CLIENT_CLOCK)();
     if (!live[0] || live[1] != expected_start || live[2] != expected_end ||
-        live[2] <= now || now < live[1]) return 0;
+        live[2] <= now || now < live[1]) {
+        log_attempt("KICK_REJECT_STALE_CAST_OR_CLOCK",kick_spell,live[0],live_guid,0);
+        return 0;
+    }
     remaining = live[2] - now;
-    if (remaining > g_max_remaining || remaining <= g_safety) return 0;
+    /* ASAP for this experimental module. The old loader's 800-ms slider is
+       intentionally ignored: waiting for it dropped the one-shot request.
+       Allow a bounded 30-s cast lifetime; never kick at/after the cast end. */
+    if (remaining > g_max_remaining || remaining <= g_safety) {
+        log_attempt("KICK_REJECT_EXPIRED_OR_TOO_LONG",kick_spell,live[0],live_guid,remaining);
+        return 0;
+    }
     if (g_last_guid==live_guid && g_last_start==live[1] &&
         g_last_end==live[2] && g_last_spell==live[0]) return 0;
     /* Revalidate target GUID immediately before action. Casting another unit's
      * spell or a new cast after a target switch is deliberately refused. */
     if (!((FM_FIND_GUID)(ULONG_PTR)FM_UNIT_GUID)("target",&expected_guid,0) ||
-        expected_guid != live_guid) return 0;
+        expected_guid != live_guid) {
+        log_attempt("KICK_REJECT_TARGET_CHANGED",kick_spell,live[0],live_guid,remaining);
+        return 0;
+    }
     g_last_guid=live_guid; g_last_start=live[1];
     g_last_end=live[2]; g_last_spell=live[0];
     ((FM_NATIVE_CAST)(ULONG_PTR)FM_CAST_SPELL)(kick_spell, 0,
@@ -147,8 +168,7 @@ static int __cdecl kick_hook(void *lua) {
      * request a Kick without a valid, fresh, independently checked cast. */
     if (InterlockedCompareExchange(&g_in_hook,1,0)==0) {
         log_attempt("KICK_MARKER_RECEIVED",1766u,0,0,0);
-        if (!process_request(arg))
-            log_attempt("KICK_REJECTED_PRECHECK",1766u,0,0,0);
+        process_request(arg);
         InterlockedExchange(&g_in_hook,0);
     }
     return 0; /* Intentional no-return Lua diagnostics marker, not a unit. */
@@ -201,7 +221,7 @@ DWORD WINAPI Frostmourne_StartAutoKick(LPVOID data) {
     p->observed_pid=GetCurrentProcessId();
     p->hook_installed=0;
     if (p->size!=sizeof(*p) || p->target_pid!=p->observed_pid ||
-        p->max_remaining_ms<200 || p->max_remaining_ms>3000 ||
+        p->max_remaining_ms<200 || p->max_remaining_ms>30000 ||
         p->safety_margin_ms<60 || p->safety_margin_ms>=p->max_remaining_ms ||
         InterlockedCompareExchange(&g_installed,0,0)) return FM_INIT_ERROR;
     memset(&probe,0,sizeof(probe));
@@ -211,14 +231,16 @@ DWORD WINAPI Frostmourne_StartAutoKick(LPVOID data) {
         return FM_INIT_ERROR;
     }
     if (p->enabled) {
-        g_max_remaining=p->max_remaining_ms;
+        g_max_remaining=30000; /* module-wide default: interrupt ASAP */
         g_safety=p->safety_margin_ms;
         init_log_path();
+        log_attempt("KICK_ASAP_INIT",1766u,0,0,g_max_remaining);
         if (!install_hook()) {
             p->win32_error=ERROR_INVALID_DATA;
             return FM_INIT_ERROR;
         }
         p->hook_installed=1;
+        log_attempt("KICK_ASAP_HOOK_INSTALLED",1766u,0,0,g_max_remaining);
     }
     p->win32_error=ERROR_SUCCESS;
     p->result=FM_KICK_START_MAGIC;

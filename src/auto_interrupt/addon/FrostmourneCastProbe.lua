@@ -3,6 +3,8 @@
 local running = true -- Auto-start.
 local kickRequests = false -- Opt-in via pinned GUI only.
 local lastKickRequest = nil
+local lastKickRequestAt = 0
+local lastKickRequestCount = 0
 local lastTrial = nil
 local lastConfirmed = nil
 local frame = CreateFrame("Frame")
@@ -91,8 +93,10 @@ local function requestNativeKick()
     if not name or not starts or not ends then return end
     if noKick then notePrecheck("cast nieprzerywalny: " .. tostring(name)); return end
     local remaining = ends - GetTime()*1000
-    if starts >= ends or remaining > 3000 or remaining <= 150 then
-        notePrecheck("poza oknem castu: pozostalo " .. tostring(math.floor(remaining)) .. " ms"); return
+    -- ASAP: do not wait for a configurable late-cast window. Require a live cast
+    -- and a short end-of-cast safety margin so an expired spell is never kicked.
+    if starts >= ends or remaining > 30000 or remaining <= 150 then
+        notePrecheck("cast poza bezpiecznym oknem: pozostalo " .. tostring(math.floor(remaining)) .. " ms"); return
     end
     local spellName = GetSpellInfo(1766)
     if not spellName then notePrecheck("brak wyuczonego Kick (ID 1766)"); return end
@@ -115,12 +119,24 @@ local function requestNativeKick()
         notePrecheck("brak poprawnego GUID celu"); return
     end
     local token=guid..":"..tostring(starts)..":"..tostring(ends)
-    if lastKickRequest==token then return end
-    lastKickRequest=token
-    lastTrial = { guid=guid, when=GetTime(), token=token }
-    say("KICK TRIAL: przekazano znacznik do DLL; wynik akcji NIEPOTWIERDZONY; GUID="..guid)
-    -- Marked UnitCastingInfo is intercepted only by the matching opt-in DLL.
-    -- The marker requests an action; only actual combat logs can confirm Kick.
+    local now=GetTime()
+    if lastKickRequest ~= token then
+        lastKickRequest=token
+        lastKickRequestAt=0
+        lastKickRequestCount=0
+    end
+    -- The native bridge can reject the first snapshot (e.g. a still-updating
+    -- object or clock). Retry with a FRESH cast on the next UI ticks; never
+    -- retry indefinitely or reuse an old cast after it ends/target switches.
+    if lastKickRequestCount >= 4 or
+        (lastKickRequestAt > 0 and now-lastKickRequestAt < 0.15) then return end
+    lastKickRequestAt=now
+    lastKickRequestCount=lastKickRequestCount+1
+    lastTrial = { guid=guid, when=now, token=token }
+    if lastKickRequestCount == 1 then
+        say("KICK ASAP: pierwsze zadanie do DLL; wynik NIEPOTWIERDZONY; GUID="..guid)
+    end
+    -- Revalidate by the native hook immediately before any cast attempt.
     UnitCastingInfo("FMKICK12340|"..guid.."|"..
         string.format("%.0f",starts).."|"..string.format("%.0f",ends).."|1766")
 end
