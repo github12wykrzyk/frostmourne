@@ -1,44 +1,30 @@
-# Development workflow
+# FROSTMOURNE — development and binary delivery workflow
 
-User request → inspect current manifests/index → verify registered target client when client-dependent → change `work` → verify → build Windows x86 → package ZIP → user tests exact artifact → acceptance → promote exact verified commit to `main` → stable baseline metadata.
+## Priority
+Optimize **time from the user's gameplay request to a complete verified Windows x86 gameplay DLL ZIP** for the registered WoW 3.3.5a build 12340 client. Follow `AGENTS.md` and `docs/DLL_DELIVERY.md`. Architecture, research, isolated engines and diagnostics are stepping stones, not the final gameplay deliverable. Never misreport gameplay readiness.
 
-## Branches
-`work` is development. `main` contains only accepted stable states. A test build is identified by exact commit SHA; a stable version is created only after acceptance.
+## Fast path (each iteration)
+User-observable behavior → read `AGENTS.md`, `AI_START_HERE.md`, `AI_INDEX.json`, `CURRENT.json`, `runtime/current.json` → relevant module and loader source → confirm `work` follows `main` → verify exact client if client-dependent → smallest real adapter and GUI/config integration → compile x86 DLL immediately → validate PE/ABI/dependencies/SHA256 and package → publish GitHub Actions ZIP → user tests the exact build → fix on `work`. Acceptance of exact verified build → update baseline/rollback and promote to `main` → synchronize `work`.
+
+Avoid unnecessary full scans, unrelated rewrites, extra DLLs and manual user steps. If the module is only an isolated engine, record `CORE_ONLY`; deliver a core diagnostic only, never represent it as playable. See `docs/DLL_DELIVERY.md` for all status labels and definition of done.
+
+## Branches and manifests
+`work` is all development and test builds; `main` is last user-accepted stable baseline. Identify tests by commit SHA, not by a newly invented stable version. `CURRENT.json` identifies accepted baseline; `runtime/current.json` contains actual active runtime only. An experimental compiled bootstrap does not automatically become an active runtime module. Updates must pin executable and DLL compatibility and support rollback.
 
 ## Registered target client
-The audited Whitemane FrostmourneRebuffed executable is registered in `reference/client/reference.json`.
+The audited reference is `reference/client/Wow.exe` and `reference/client/reference.json`, SHA256 `edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd`, size 7,704,216, PE I386/x86, version 3.3.5.12340. Before deriving addresses, hooks, layouts or patches, run `python tools/verify_reference_client.py --path reference/client/Wow.exe`; check the real on-disk active EXE before assuming its compatibility. A different fingerprint requires an independent audit. Do not copy client-specific code/offsets from other WoW versions.
 
-Expected fingerprint:
-- `Wow.exe`
-- SHA256 `edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd`
-- 7,704,216 bytes
-- PE I386 / x86
-- file version resource `3, 3, 5, 12340`
+## Build and CI
+`.github/workflows/verify.yml` verifies repository/runtime/client state, runs unit tests, compiles an x86 smoke executable and packages the active runtime manifest. This smoke executable is NOT a gameplay module; the runtime manifest may remain empty.
 
-Before deriving offsets, hooks, structures or binary patches, run:
+`.github/workflows/gui-loader-x86.yml` builds the experimental GUI loader and bootstrap DLL, verifies native/managed x86 PE, ABI, SHA256 and ZIP integrity, runs no-game self-tests, and uploads `frostmourne-gui-loader-x86`. Its current bootstrap integrates only the inert Auto Pickpocket decision core. Its successful CI run confirms a compiled test package, not Auto Pickpocket or Auto Interrupt gameplay. For a real gameplay module, update the relevant owning build workflow and existing loader/compatibility manifest to compile/link the verified game adapter, build a complete integrated ZIP and publish a truthful test status.
 
-```bash
-python tools/verify_reference_client.py --path <path-to-Wow.exe>
-```
+`.github/workflows/auto-interrupt-engine-x86.yml` and `auto-pickpocket-core.yml` independently test isolated logic. They are diagnostic steps, not replacement for an integrated DLL artifact.
 
-A different hash is a different client until audited. Never silently reuse offsets from another WoW build.
+For significant changes run `python tools/verify_current.py`. Also run `python tools/verify_repo.py` for changes to repo/baseline/recovery metadata and stable promotion; run the client verifier for client-dependent work. Recheck architecture, dependencies, SHA256, the ZIP file list and whether the binary matches the loader's allowlist. Fail on missing required artifacts; fix real verifier errors rather than weakening checks.
 
-## CI
-`.github/workflows/verify.yml` runs repository/runtime verification on pushes and pull requests to `work` or `main`. It always validates the registered client metadata. If `reference/client/Wow.exe` exists in the checkout, CI also verifies its exact bytes, x86 PE machine and build markers.
+## In-process and in-game tests
+Successful process launch != DLL loaded; DLL loaded != initialized; initialization != gameplay action. Record each independently. GitHub-hosted CI cannot confirm user game actions; only an actual reproduced in-game result with its test conditions may be marked `GAMEPLAY_TESTED`. If no playable implementation is possible, give the user a precise blocker and honest partial state, not a fabricated ZIP or test claim.
 
-A Windows job initializes the MSVC x86 environment and compiles `tests/x86_smoke.c` as a CI-only executable. It proves x86 compilation without pretending to be a game module.
-
-When real components are added, their build commands must be included in the Windows job and their outputs must pass `tools/verify_current.py` before packaging.
-
-## First real module
-Verify the target client first. Create `src/<component>/`, add build metadata, build x86 DLL/EXE, then add one runtime manifest entry with path, SHA256, version, x86 architecture, canonical source and dependencies. Update `AI_INDEX.json`, run both runtime/repository verifiers plus the target-client verifier, package, and test. Do not create a stable baseline until user acceptance.
-
-## Repeatable PE audit
-
-The exact-reference PE inventory lives in `reference/client/pe_audit.json`, generated by `tools/audit_reference_client.py` after validating the registered SHA256 and size. GitHub Actions pins `pefile==2024.8.26`, regenerates the inventory, and fails if the committed snapshot differs. See `docs/CLIENT_PE_AUDIT.md` for verified PE facts and their limitations.
-
-The proposed external supervisor, bootstrap DLL, dependency/ABI gates, safe shutdown and transactional updater are documented in `docs/LOADER_UPDATER_ARCHITECTURE.md`. This is architecture only: no active DLL, in-process loader or updater has been built or tested yet. The reference EXE remains outside active runtime.
-
-## Standalone updater
-
-The experimental Windows x86 updater is built from `src/updater/` by the `updater-windows-x86` GitHub Actions job. The download artifact is `frostmourne-updater-win-x86`. It reads `updates/work.json` and never promotes work releases to stable. The current work manifest has no active game files; no in-game DLL or EXE is offered by updater until real verified compatible runtime artifacts are published. See `docs/UPDATER.md`.
+## Release
+Only after explicit user acceptance of the tested build: promote its exact verified commit to `main`, update stable `CURRENT.json`, `runtime/current.json`, SHA256/dependency manifests, rollback metadata and docs; run both repository and runtime verifiers, synchronize `work`. Never promote based solely on a unit-test or loader status PASS.
