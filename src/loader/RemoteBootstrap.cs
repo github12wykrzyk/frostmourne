@@ -192,9 +192,10 @@ namespace FrostmourneGui {
                 uint apProbe = ExportRva(dll, "_Frostmourne_GetAutoPickpocketStatus@4");
                 uint apStatus = Invoke(process, Ptr(checked(loadedBase + apProbe)), IntPtr.Zero,
                     "Frostmourne_GetAutoPickpocketStatus", log);
-                if (apStatus != 0x41500001)
-                    throw new InvalidOperationException("Auto Pickpocket CORE status FAIL: 0x" + apStatus.ToString("X8"));
-                log("ETAP auto_pickpocket_core=PASS status=IN_PROCESS_INERT adapter=NIEZAIMPLEMENTOWANY gameplay_actions=WYLACZONE pid=" + pid);
+                if (apStatus != 0x41500002 && apStatus != 0x41500003)
+                    throw new InvalidOperationException("Auto Pickpocket native adapter FAIL: 0x" + apStatus.ToString("X8"));
+                log("ETAP auto_pickpocket_native=PASS status=" + (apStatus == 0x41500003 ? "READY" : "STARTING") +
+                    " client_cast=IMPLEMENTED gameplay_result=NOT_TESTED_IN_GAME pid=" + pid);
                 // Read-only binding probe: samples only known Lua registration pairs and
                 // function prologues. It neither calls WoW functions nor reads live units.
                 uint probeRva = ExportRva(dll, "_Frostmourne_ProbeInterruptBindings@4");
@@ -228,7 +229,7 @@ namespace FrostmourneGui {
                     throw new InvalidOperationException("READ-ONLY interrupt binding probe FAIL; check stage/bitmasks in log");
                 log("ETAP interrupt_bindings=PASS pid=" + probePid +
                     " sampled=4_registration_pairs_and_4_function_prologues live_cast=NOT_READ kick=DISABLED");
-                return "PASS: DLL PID=" + pid + ", CAST BINDINGS=PASS (read-only); Auto Kick WYLACZONY";
+                return "PASS: DLL PID=" + pid + ", Auto Pickpocket adapter STARTING/READY (wynik w grze NIEPOTWIERDZONY)";
             } finally {
                 if (probePointer != IntPtr.Zero && probeSafe)
                     VirtualFreeEx(process, probePointer, UIntPtr.Zero, MemRelease);
