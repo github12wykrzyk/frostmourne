@@ -1,9 +1,9 @@
-# FROSTMOURNE — Auto Pickpocket (experimental core; NOT game-ready)
+# FROSTMOURNE — Auto Pickpocket (experimental in-process core; NOT game-ready)
 
 Target: Whitemane Frostmourne Rebuffed WoW 3.3.5a build 12340 Windows x86.
-Status: **client-independent decision engine and no-game tests only**. NOT an active DLL, addon, or feature in the game. No WoW-native object enumerator, in-game GUI, cast bridge, outcome event binding, or module loader integration exists as of this commit. Do not offer a gameplay test package or claim that Pick Pocket fires in WoW. Existing GUI loader and ABI 1.0 bootstrap are intentionally unchanged. The existing bootstrap's remote load PASS proves only diagnostic initialization.
+Status: **client-independent decision engine embedded in the experimental bootstrap DLL**. GitHub Actions provides a complete GUI loader ZIP with a new bootstrap status export. A successful local test can confirm that the decision core initializes within Wow.exe; it does NOT confirm any Pick Pocket gameplay action. No WoW-native object enumerator, in-game GUI, cast bridge or outcome event binding exists. The original ABI 1.0 remains intact; the GUI loader now checks the additional read-only AP core status. Never claim that Pick Pocket fires in WoW based on loader/ABI/CI PASS.
 
-Sources: src/auto_pickpocket/auto_pickpocket.{h,c}; no code/offsets imported from other client versions. Test: tests/test_auto_pickpocket.c. CI: .github/workflows/auto-pickpocket-core.yml.
+Sources: src/auto_pickpocket/auto_pickpocket.{h,c}, integrated by src/bootstrap/bootstrap.c and read out by src/loader/RemoteBootstrap.cs. No code/offsets imported from other client versions. Tests: tests/test_auto_pickpocket.c and src/bootstrap/local_smoke.c. CI: .github/workflows/auto-pickpocket-core.yml, gui-loader-x86.yml and bootstrap-local-smoke.yml.
 
 ## Core semantics
 
@@ -18,7 +18,7 @@ Sources: src/auto_pickpocket/auto_pickpocket.{h,c}; no code/offsets imported fro
 
 1. Verify the EXACT reference/client/Wow.exe fingerprint from reference/client/reference.json. Audit functions/layouts against that binary before relying on any native address.
 2. Establish a reliable read-only object enumerator, unit eligibility/type/LOS/real spell-range checks, GUID and world-epoch management, safe action-thread dispatch and correlated cast outcome events. Handle zone/relog, target changes, NPC despawn and races at each action. No offset or hook may be guessed from WoW 1.12 or a different 3.3.5a EXE.
-3. Integrate through a versioned bootstrap/module contract and a verified compatibility/dependency manifest; do not bypass the existing loader's exact SHA256 allowlist. Only then add GUI toggles, atomic config persistence, in-game diagnostics and full Windows x86 packaging.
+3. The client-independent core now compiles into a new package-pinned bootstrap DLL, and the existing loader checks its inert status. A future verified adapter must use an explicit versioned contract and validated compatibility/dependency manifest; do not bypass the existing loader's exact SHA256 allowlist. Only after verifying the adapter add gameplay GUI toggles, atomic config persistence, detailed gameplay diagnostics and full Windows x86 packaging.
 4. Run verify_reference_client, verify_current and verify_repo and CI; run authorized local gameplay tests separately. A native compilation test is not proof of actual in-game behavior.
 
-No change to CURRENT.json, runtime/current.json, main, or the pinned loader release is warranted by this incomplete stage.
+This is an experimental test ZIP, not a user-accepted stable release. No change to CURRENT.json, runtime/current.json or main is warranted. The GUI package includes a NEW build-time SHA256 pin for its bundled DLL; do not mix versions. See docs/GUI_LOADER_TEST.md for the limited in-process test.
