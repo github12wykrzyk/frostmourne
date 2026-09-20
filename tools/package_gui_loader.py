@@ -50,7 +50,8 @@ def main() -> int:
         remote = (ROOT / "src/loader/RemoteBootstrap.cs").read_text(encoding="utf-8")
         expected = ("CreateRemoteThread", "WriteProcessMemory", "VirtualAllocEx",
                     "LoadLibraryW", "Frostmourne_Initialize", "Frostmourne_GetAbi",
-                    "GetExitCodeThread", "observed_pid")
+                    "GetExitCodeThread", "observed_pid",
+                    "Frostmourne_GetAutoPickpocketStatus", "adapter=NIEZAIMPLEMENTOWANY")
         if not all(name in remote for name in expected):
             raise ValueError("GUI missing required explicit in-process loading/ABI diagnostics")
         disallowed = ("SetWindowsHookEx", "NtCreateThreadEx", "PROCESS_ALL_ACCESS")
@@ -100,6 +101,8 @@ def main() -> int:
             "process_launch": "Process.Start -> CreateProcess",
             "inprocess_dll_loading": "IMPLEMENTED_STANDARD_WIN32_NOT_TESTED_ON_GAME_IN_CI",
             "abi_initialization_in_wow": "NOT_TESTED_ON_GAME_IN_CI",
+            "auto_pickpocket_core": "COMPILED_IN_BOOTSTRAP_WITH_INERT_STATUS_EXPORT",
+            "auto_pickpocket_gameplay": "NOT_IMPLEMENTED_NO_VERIFIED_NATIVE_ADAPTER",
             "active_runtime": False,
             "files": files,
         }
