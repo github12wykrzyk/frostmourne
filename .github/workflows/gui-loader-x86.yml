@@ -5,6 +5,8 @@ on:
     branches: [work]
     paths:
       - 'src/loader/**'
+      - 'tools/package_universal_loader.py'
+      - 'docs/UNIVERSAL_LOADER.md'
       - 'src/bootstrap/bootstrap.c'
       - 'src/bootstrap/bootstrap.h'
       - 'src/auto_pickpocket/**'
@@ -51,9 +53,9 @@ jobs:
       - name: Compile WinForms GUI x86 release and debug
         shell: cmd
         run: |
-          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /optimize+ /out:dist\FrostmourneGui.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs
+          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /optimize+ /out:dist\FrostmourneGui.exe /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs src\loader\ModuleCatalog.cs src\loader\ModuleOptionsDialog.cs
           if errorlevel 1 exit /b 1
-          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /debug:full /define:DEBUG /out:dist\FrostmourneGuiDebug.exe /pdb:dist\FrostmourneGuiDebug.pdb /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs
+          "%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x86 /debug:full /define:DEBUG /out:dist\FrostmourneGuiDebug.exe /pdb:dist\FrostmourneGuiDebug.pdb /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll src\loader\Program.cs src\loader\RemoteBootstrap.cs src\loader\ModuleCatalog.cs src\loader\ModuleOptionsDialog.cs
           if errorlevel 1 exit /b 1
       - name: Audit PE32, ABI, dependencies and immutable ZIP contents
         shell: cmd
@@ -61,6 +63,8 @@ jobs:
           python -m pip install pefile==2024.8.26
           if errorlevel 1 exit /b 1
           python tools/package_gui_loader.py
+          if errorlevel 1 exit /b 1
+          python tools/package_universal_loader.py
           if errorlevel 1 exit /b 1
       - name: Run no-game packaged DLL self-tests
         shell: cmd
@@ -85,4 +89,17 @@ jobs:
         with:
           name: frostmourne-gui-loader-x86
           path: dist/frostmourne-gui-loader-x86.zip
+          if-no-files-found: error
+
+      - name: Upload universal x86 loader (separate archive)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frostmourne_Universal_Loader_x86
+          path: dist/Frostmourne_Universal_Loader_x86.zip
+          if-no-files-found: error
+      - name: Upload independently replaceable x86 module bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frostmourne_Modules_x86
+          path: dist/Frostmourne_Modules_x86.zip
           if-no-files-found: error
