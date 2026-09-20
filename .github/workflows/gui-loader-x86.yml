@@ -43,9 +43,9 @@ jobs:
           call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x86 -host_arch=x64
           if errorlevel 1 exit /b 1
           if not exist dist mkdir dist
-          cl /nologo /W4 /WX /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c src\auto_pickpocket\auto_pickpocket.c src\auto_pickpocket\native_adapter.c /link /INCREMENTAL:NO
+          cl /nologo /W4 /WX /MT /LD /Fe:dist\FrostmourneBootstrap.dll src\bootstrap\bootstrap.c src\auto_pickpocket\auto_pickpocket.c src\auto_pickpocket\native_adapter.c /link /INCREMENTAL:NO user32.lib
           if errorlevel 1 exit /b 1
-          cl /nologo /W4 /WX /MT /Od /Zi /DFM_DEBUG_BUILD /LD /Fe:dist\FrostmourneBootstrapDebug.dll src\bootstrap\bootstrap.c src\auto_pickpocket\auto_pickpocket.c src\auto_pickpocket\native_adapter.c /link /DEBUG /PDB:dist\FrostmourneBootstrapDebug.pdb /INCREMENTAL:NO
+          cl /nologo /W4 /WX /MT /Od /Zi /DFM_DEBUG_BUILD /LD /Fe:dist\FrostmourneBootstrapDebug.dll src\bootstrap\bootstrap.c src\auto_pickpocket\auto_pickpocket.c src\auto_pickpocket\native_adapter.c /link /DEBUG /PDB:dist\FrostmourneBootstrapDebug.pdb /INCREMENTAL:NO user32.lib
           if errorlevel 1 exit /b 1
       - name: Compile WinForms GUI x86 release and debug
         shell: cmd
