@@ -93,7 +93,7 @@ end
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-frame:SetScript("OnEvent", function(self, event)
+frame:SetScript("OnEvent", function(self, event, ...)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
         -- WoW 3.3.5a event payload is delivered as varargs (not CombatLogGetCurrentEventInfo).
         local timestamp, subevent, hideCaster, sourceGUID, sourceName, sourceFlags,
