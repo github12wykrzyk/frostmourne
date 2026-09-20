@@ -182,7 +182,7 @@ namespace FrostmourneGui {
                 pinnedHash = parts[0].ToLowerInvariant();
                 if (!long.TryParse(parts[1], out pinnedSize) || pinnedSize < 256) throw new InvalidDataException("Bledny rozmiar DLL");
                 Write("Manifest DLL: sha256=" + pinnedHash + " size=" + pinnedSize);
-            } catch (Exception ex) { Write("FAIL manifest DLL: " + ex.Message); pinnedHash = ""; }
+            } catch (Exception ex) { if (File.Exists(System.IO.Path.Combine(Application.StartupPath, "bootstrap.sha256"))) Write("FAIL manifest legacy DLL: " + ex.Message); pinnedHash = ""; }
         }
         void AddDefaultDll() {
             string p = System.IO.Path.Combine(Application.StartupPath, "FrostmourneBootstrap.dll");
@@ -404,7 +404,7 @@ namespace FrostmourneGui {
                             if (Verify.Hash(module.Path) != module.Hash ||
                                 Verify.Hash(verifiedExe) != verifiedHash)
                                 throw new InvalidDataException("EXE/DLL zmienione po weryfikacji");
-                            string outcome = module.Manifest == null
+                            string outcome = (module.Manifest == null || module.Manifest.bootstrap_mode == "legacy_bootstrap")
                                 ? RemoteBootstrap.LoadAndInitialize(game, verifiedExe, module.Path,
                                     kickTrial.Checked, (uint)kickWindow.Value, Write)
                                 : RemoteBootstrap.LoadGeneric(game, verifiedExe, module.Path,
