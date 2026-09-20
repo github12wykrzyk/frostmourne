@@ -568,6 +568,7 @@ namespace FrostmourneGui {
     internal static class Program {
         [STAThread] static int Main(string[] args) {
             if (args.Length == 1 && args[0] == "--updater-self-test") return UpdateClient.SelfTest() ? 0 : 5;
+            if (args.Length == 1 && args[0] == "--updater-integration-test") return UpdateClient.IntegrationTest() ? 0 : 6;
             if (args.Length == 1 && args[0] == "--self-test") {
                 try {
                     string root = Application.StartupPath;
