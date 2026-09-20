@@ -254,6 +254,50 @@ namespace FrostmourneGui {
                 }
             } finally { modules.EndUpdate(); loading = false; }
         }
+        // Install only the bundled diagnostic addon beside the VERIFIED game executable.
+        // DLL injection and Lua addons are separate subsystems. Loading a DLL never registers /fmcast.
+        void InstallCastProbeAddon() {
+            string src = System.IO.Path.Combine(Application.StartupPath, "FrostmourneCastProbe");
+            string sourceToc = System.IO.Path.Combine(src, "FrostmourneCastProbe.toc");
+            string sourceLua = System.IO.Path.Combine(src, "FrostmourneCastProbe.lua");
+            if (!File.Exists(sourceToc) || !File.Exists(sourceLua))
+                throw new FileNotFoundException("W paczce brakuje folderu FrostmourneCastProbe (TOC/LUA); wypakuj CALY ZIP.");
+            string tocText = File.ReadAllText(sourceToc);
+            string luaText = File.ReadAllText(sourceLua);
+            if (!tocText.Contains("## Interface: 30300") ||
+                !tocText.Contains("FrostmourneCastProbe.lua") ||
+                !luaText.Contains("SLASH_FROSTMOURNECASTPROBE1") ||
+                !luaText.Contains("SlashCmdList[\"FROSTMOURNECASTPROBE\"]"))
+                throw new InvalidDataException("Niepoprawna zawartosc dolaczonego dodatku FrostmourneCastProbe");
+            string target = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(verifiedExe),
+                "Interface", "AddOns", "FrostmourneCastProbe");
+            Directory.CreateDirectory(target);
+            foreach (string fileName in new[] { "FrostmourneCastProbe.toc", "FrostmourneCastProbe.lua" }) {
+                string from = System.IO.Path.Combine(src, fileName);
+                string to = System.IO.Path.Combine(target, fileName);
+                string expected = Verify.Hash(from);
+                if (File.Exists(to) && Verify.Hash(to) != expected) {
+                    // Preserve previous diagnostic versions or locally modified addon files.
+                    string prior = File.ReadAllText(to);
+                    bool ours = fileName.EndsWith(".toc", StringComparison.OrdinalIgnoreCase)
+                        ? prior.Contains("## Title: FrostmourneCastProbe")
+                        : prior.Contains("FROSTMOURNE / WoW 3.3.5a");
+                    if (!ours)
+                        throw new InvalidDataException("Obcy plik dodatku w " + to +
+                            "; nie nadpisuje go automatycznie.");
+                    string backup = to + ".fmbackup-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                    File.Copy(to, backup, false);
+                    Write("ETAP addon_backup=PASS file=" + backup);
+                }
+                if (!File.Exists(to) || Verify.Hash(to) != expected)
+                    File.Copy(from, to, true);
+                if (Verify.Hash(to) != expected)
+                    throw new InvalidDataException("Blad weryfikacji SHA256 zainstalowanego dodatku: " + to);
+                Write("ETAP addon_file=PASS path=" + to + " sha256=" + expected);
+            }
+            Write("ETAP addon_install=PASS folder=" + target +
+                " command=/fmcast_on game_restart_required_if_already_running=true");
+        }
         void Launch() {
             if (checking) return;
             checking = true;
@@ -265,7 +309,18 @@ namespace FrostmourneGui {
                     gameInfo.Text = "Gra: FAIL kontroli plikow"; resultInfo.Text = "FAIL: weryfikacja plikow";
                     return;
                 }
-                // Verify again immediately before CreateProcess; no tampering with the game folder.
+                // Place the official read-only addon in the game AddOns directory BEFORE launch.
+                // This only happens after strict EXE and packaged-DLL checks.
+                try {
+                    InstallCastProbeAddon();
+                } catch (Exception addonError) {
+                    gameInfo.Text = "Gra: NIEURUCHOMIONA - instalacja dodatku FAIL";
+                    resultInfo.Text = "ADDON FAIL: " + addonError.Message;
+                    Write("ETAP addon_install=FAIL " + addonError);
+                    return;
+                }
+                // Verify again immediately before CreateProcess; never change the game's EXE.
+
                 if (Verify.Hash(exe.Text) != verifiedHash) throw new InvalidDataException("Wow.exe zmienil sie przed uruchomieniem");
                 ProcessStartInfo start = new ProcessStartInfo {
                     FileName = verifiedExe, WorkingDirectory = System.IO.Path.GetDirectoryName(verifiedExe),

@@ -47,6 +47,11 @@ def main() -> int:
         source = (ROOT / "src/loader/Program.cs").read_text(encoding="utf-8")
         if "Verify.ReferenceSha" not in source or "Process.Start(start)" not in source:
             raise ValueError("GUI source has no exact client gate or launch path")
+        for marker in ("InstallCastProbeAddon();", "ETAP addon_install=PASS",
+                       '"Interface", "AddOns", "FrostmourneCastProbe"',
+                       "Verify.Hash(to) != expected"):
+            if marker not in source:
+                raise ValueError("GUI source lacks verified addon installation: " + marker)
         remote = (ROOT / "src/loader/RemoteBootstrap.cs").read_text(encoding="utf-8")
         expected = ("CreateRemoteThread", "WriteProcessMemory", "VirtualAllocEx",
                     "LoadLibraryW", "Frostmourne_Initialize", "Frostmourne_GetAbi",
@@ -97,6 +102,8 @@ def main() -> int:
             name = "FrostmourneCastProbe/" + addon_name
             payloads[name] = addon_data
             files[name] = {"sha256": sha(addon_data), "size_bytes": len(addon_data)}
+        if b'say("Addon LOADED.' not in payloads["FrostmourneCastProbe/FrostmourneCastProbe.lua"]:
+            raise ValueError("addon does not announce successful Lua load in game")
 
         for optional in ("FrostmourneGuiDebug.pdb", "FrostmourneBootstrapDebug.pdb"):
             q = DIST / optional

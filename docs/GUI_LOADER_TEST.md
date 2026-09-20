@@ -17,14 +17,27 @@ successful in-process initialization. A failed probe stops the diagnostic stage;
 the launcher does not attempt to bypass security controls.
 
 The separate addon uses only the ordinary in-game Lua API to observe
-`UnitCastingInfo`, `UnitChannelInfo` and `UnitGUID` for target/focus.
-The addon does NOT communicate with the DLL: its live cast samples are
-independent evidence, not proof of a native DLL read. To enable it, extract
-the included `FrostmourneCastProbe` folder into the target game's
-`Interface\\AddOns` before launching the game. Once logged in,
-type `/fmcast on`, select an enemy casting a spell and observe the printed
-GUID, spell name, remaining time, interruptible flag and cast/channel status;
-`/fmcast off` stops updates. The addon does not cast anything.
+`UnitCastingInfo`, `UnitChannelInfo`, and `UnitGUID` for target/focus.
+The addon does NOT communicate with the DLL: its samples are independent
+evidence, not proof of a native DLL cast read. **The new GUI automatically
+installs both packaged addon files** beside the verified game EXE at
+`Interface\\AddOns\\FrostmourneCastProbe\\` **before launching the game**,
+verifies SHA256 of the installed copies, and logs `ETAP addon_install=PASS`
+or the exact failure. Older installations of this specific addon are backed
+up before replacement; files not identifiable as our addon are never replaced.
+The loader DLL on its own does NOT register the slash command.
+
+After logging in, the chat must print `FM Cast Probe Addon LOADED`. This
+confirms that WoW has loaded the Lua addon; the loader's
+`CAST BINDINGS=PASS` confirms a separate read-only DLL binding check only.
+Type `/fmcast on` (alternative `/fmprobe on`) and select an enemy casting
+a spell. Observe GUID, spell name, remaining time, interruptible flag and
+cast/channel status. `/fmcast off` stops updates. No Kick is attempted.
+If the chat does not print `Addon LOADED`, inspect WoW's AddOns list at
+character selection; enable FrostmourneCastProbe. If a game instance was
+already open before installation, fully restart the game through the new loader.
+The installer operates only on the directory of the EXE selected and verified
+in the GUI, not on a separate launcher/alternate game folder.
 
 Use only an isolated, authorized local test. Preserve the GUI log and in-game
 cast print or screenshot after one test. Do not disable antivirus or anti-cheat,

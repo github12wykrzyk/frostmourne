@@ -44,6 +44,7 @@ frame:SetScript("OnUpdate", function(self, dt)
     end
 end)
 SLASH_FROSTMOURNECASTPROBE1 = "/fmcast"
+SLASH_FROSTMOURNECASTPROBE2 = "/fmprobe"
 SlashCmdList["FROSTMOURNECASTPROBE"] = function(msg)
     msg = string.lower((msg or ""):match("^%s*(.-)%s*$"))
     if msg == "on" then
@@ -60,3 +61,6 @@ SlashCmdList["FROSTMOURNECASTPROBE"] = function(msg)
         end
     end
 end
+
+-- This message confirms addon initialization; a DLL binding PASS alone does not.
+say("Addon LOADED. Uzyj /fmcast on (lub /fmprobe on). Auto Kick pozostaje OFF.")
