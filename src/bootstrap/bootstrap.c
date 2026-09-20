@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <string.h>
 #include "bootstrap.h"
 #include "../auto_pickpocket/auto_pickpocket.h"
 
@@ -113,4 +114,61 @@ DWORD WINAPI Frostmourne_GetAutoPickpocketStatus(LPVOID unused) {
         !g_auto_pickpocket.config.require_stealth || !g_auto_pickpocket.config.block_combat)
         return 0;
     return FM_AP_CORE_INERT;
+}
+
+/* No execution of private WoW functions: only 8-byte registration entries and
+ * 12-byte function prologues from the exact audited 12340 image are sampled.
+ * ReadProcessMemory fails cleanly for an inaccessible/modified address. */
+typedef struct FM_PROBE_EXPECTED {
+    DWORD table_va, name_va, function_va;
+    BYTE first_bytes[12];
+} FM_PROBE_EXPECTED;
+static const FM_PROBE_EXPECTED g_probe_expected[4] = {
+    {0x00AD2560u, 0x00A1EED8u, 0x00611DF0u,
+     {0x55,0x8B,0xEC,0x81,0xEC,0xC8,0x02,0x00,0x00,0x57,0x8B,0x7D}},
+    {0x00AD2568u, 0x00A1EEC8u, 0x00612090u,
+     {0x55,0x8B,0xEC,0x81,0xEC,0xBC,0x02,0x00,0x00,0x56,0x8B,0x75}},
+    {0x00AD22D0u, 0x00A1F450u, 0x0060E630u,
+     {0x55,0x8B,0xEC,0x83,0xEC,0x54,0x57,0x8B,0x7D,0x08,0x6A,0x01}},
+    {0x00ACCDF0u, 0x00A0AC08u, 0x0053E060u,
+     {0x55,0x8B,0xEC,0x81,0xEC,0xD0,0x02,0x00,0x00,0x56,0x8B,0x75}}
+};
+static int fm_read_exact(DWORD va, void *out, SIZE_T bytes) {
+    SIZE_T got = 0;
+    return ReadProcessMemory(GetCurrentProcess(), (LPCVOID)(ULONG_PTR)va,
+                             out, bytes, &got) && got == bytes;
+}
+DWORD WINAPI Frostmourne_ProbeInterruptBindings(LPVOID data) {
+    FM_INTERRUPT_PROBE_PACKET *p = (FM_INTERRUPT_PROBE_PACKET *)data;
+    DWORD i;
+    if (!p) return FM_INIT_ERROR;
+    p->result = FM_INIT_ERROR;
+    p->observed_pid = GetCurrentProcessId();
+    p->image_base = (DWORD)(ULONG_PTR)GetModuleHandleW(NULL);
+    p->registration_mask = 0;
+    p->prologue_mask = 0;
+    p->win32_error = ERROR_INVALID_PARAMETER;
+    if (p->size != sizeof(*p) || p->target_pid != g_pid ||
+        p->observed_pid != g_pid ||
+        InterlockedCompareExchange(&g_state, 2, 2) != 2 ||
+        p->image_base != 0x00400000u) return FM_INIT_ERROR;
+    p->win32_error = ERROR_SUCCESS;
+    for (i=0; i<4; ++i) {
+        DWORD pair[2];
+        BYTE prologue[12];
+        if (fm_read_exact(g_probe_expected[i].table_va, pair, sizeof(pair)) &&
+            pair[0] == g_probe_expected[i].name_va &&
+            pair[1] == g_probe_expected[i].function_va)
+            p->registration_mask |= (1u << i);
+        if (fm_read_exact(g_probe_expected[i].function_va, prologue, sizeof(prologue)) &&
+            memcmp(prologue, g_probe_expected[i].first_bytes, sizeof(prologue)) == 0)
+            p->prologue_mask |= (1u << i);
+    }
+    if (p->registration_mask != FM_INTERRUPT_PROBE_MASK ||
+        p->prologue_mask != FM_INTERRUPT_PROBE_MASK) {
+        p->win32_error = ERROR_INVALID_DATA;
+        return FM_INIT_ERROR;
+    }
+    p->result = FM_INTERRUPT_PROBE_MAGIC;
+    return FM_INTERRUPT_PROBE_MAGIC;
 }

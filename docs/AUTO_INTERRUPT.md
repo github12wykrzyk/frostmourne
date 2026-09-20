@@ -34,3 +34,9 @@ attempt once, duplicate suppression, noninterruptible/instant cast skip,
 stale/cancelled cast skip, window/range/resource checks, second-read race,
 rejection suppression, fail-closed adapter and disabled state.
 No local gameplay test is requested for this non-game, isolated engine.
+
+## Read-only in-game diagnostic package
+
+The experimental GUI-loader package now includes a read-only in-process Lua-binding
+fingerprint probe and a separate non-communicating Lua addon for observing actual casts.
+See docs/GUI_LOADER_TEST.md. No live-unit DLL adapter or automatic Kick exists.

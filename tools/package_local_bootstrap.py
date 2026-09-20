@@ -41,6 +41,7 @@ def audit(path: Path, dll: bool) -> dict:
                 "_Frostmourne_Shutdown@4",
                 "_Frostmourne_GetAbi@4",
                 "_Frostmourne_GetAutoPickpocketStatus@4",
+                "_Frostmourne_ProbeInterruptBindings@4",
             }
             if not expected.issubset(names):
                 raise ValueError(f"{path.name}: missing diagnostic ABI exports: {expected-names}")

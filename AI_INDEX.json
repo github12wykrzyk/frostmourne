@@ -50,8 +50,8 @@
       "source": "src/auto_interrupt",
       "docs": "docs/AUTO_INTERRUPT.md",
       "platform": "Windows x86",
-      "status": "experimental-decision-engine-only",
-      "distribution": null,
+      "status": "experimental-readonly-binding-probe-plus-independent-lua-cast-addon",
+      "distribution": "GitHub Actions artifact frostmourne-gui-loader-x86 (read-only DLL probe and Lua addon; no Kick)",
       "active_runtime": false,
       "client_adapter_verified": false
     }

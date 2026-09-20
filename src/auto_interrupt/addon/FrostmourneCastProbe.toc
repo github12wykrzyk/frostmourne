@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: FrostmourneCastProbe
+## Notes: Read-only target/focus cast diagnostic for WoW 3.3.5a (no Kick)
+## Author: FROSTMOURNE
+## Version: 0.1-diagnostic
+FrostmourneCastProbe.lua

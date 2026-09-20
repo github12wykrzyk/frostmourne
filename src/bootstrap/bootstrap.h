@@ -28,3 +28,12 @@ __declspec(dllexport) DWORD WINAPI Frostmourne_GetAbi(LPVOID unused);
 /* Diagnostic status only. 0x41500001 = AP core initialized, native game adapter ABSENT. */
 #define FM_AP_CORE_INERT 0x41500001u
 __declspec(dllexport) DWORD WINAPI Frostmourne_GetAutoPickpocketStatus(LPVOID unused);
+
+/* Read-only exact-image in-process check; does NOT query live unit/cast data. */
+#define FM_INTERRUPT_PROBE_MAGIC 0xF17A1234u
+#define FM_INTERRUPT_PROBE_MASK 0x0000000Fu
+typedef struct FM_INTERRUPT_PROBE_PACKET {
+    DWORD size, target_pid, result, observed_pid;
+    DWORD image_base, registration_mask, prologue_mask, win32_error;
+} FM_INTERRUPT_PROBE_PACKET;
+__declspec(dllexport) DWORD WINAPI Frostmourne_ProbeInterruptBindings(LPVOID packet);

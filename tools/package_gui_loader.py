@@ -51,7 +51,8 @@ def main() -> int:
         expected = ("CreateRemoteThread", "WriteProcessMemory", "VirtualAllocEx",
                     "LoadLibraryW", "Frostmourne_Initialize", "Frostmourne_GetAbi",
                     "GetExitCodeThread", "observed_pid",
-                    "Frostmourne_GetAutoPickpocketStatus", "adapter=NIEZAIMPLEMENTOWANY")
+                    "Frostmourne_GetAutoPickpocketStatus", "adapter=NIEZAIMPLEMENTOWANY",
+                    "Frostmourne_ProbeInterruptBindings", "live_cast=NOT_READ")
         if not all(name in remote for name in expected):
             raise ValueError("GUI missing required explicit in-process loading/ABI diagnostics")
         disallowed = ("SetWindowsHookEx", "NtCreateThreadEx", "PROCESS_ALL_ACCESS")
@@ -88,6 +89,15 @@ def main() -> int:
             "bootstrap.sha256": pin,
             "README-LOADER.md": readme,
         }
+        for addon_name in ("FrostmourneCastProbe.toc", "FrostmourneCastProbe.lua"):
+            addon_path = ROOT / "src" / "auto_interrupt" / "addon" / addon_name
+            addon_data = addon_path.read_bytes()
+            if addon_name.endswith(".lua") and (b"CastSpellByID(" in addon_data or b"CastSpellByName(" in addon_data):
+                raise ValueError("diagnostic addon must not issue cast commands")
+            name = "FrostmourneCastProbe/" + addon_name
+            payloads[name] = addon_data
+            files[name] = {"sha256": sha(addon_data), "size_bytes": len(addon_data)}
+
         for optional in ("FrostmourneGuiDebug.pdb", "FrostmourneBootstrapDebug.pdb"):
             q = DIST / optional
             if q.is_file():
@@ -103,6 +113,9 @@ def main() -> int:
             "abi_initialization_in_wow": "NOT_TESTED_ON_GAME_IN_CI",
             "auto_pickpocket_core": "COMPILED_IN_BOOTSTRAP_WITH_INERT_STATUS_EXPORT",
             "auto_pickpocket_gameplay": "NOT_IMPLEMENTED_NO_VERIFIED_NATIVE_ADAPTER",
+            "auto_interrupt_bindings": "INPROCESS_READONLY_REGISTRATION_AND_PROLOGUE_PROBE",
+            "auto_interrupt_live_cast": "ONLY_INDEPENDENT_READONLY_LUA_ADDON; NOT_NATIVE_DLL",
+            "auto_interrupt_kick": "DISABLED_NOT_IMPLEMENTED",
             "active_runtime": False,
             "files": files,
         }

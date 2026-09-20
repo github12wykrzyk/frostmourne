@@ -128,8 +128,8 @@ namespace FrostmourneGui {
             IntPtr loadLibrary = RemoteOsFunction(target, "LoadLibraryW");
             IntPtr process = OpenProcess(Access, false, (uint)target.Id);
             if (process == IntPtr.Zero) throw Win32("OpenProcess PID=" + target.Id);
-            IntPtr pathPointer = IntPtr.Zero, packetPointer = IntPtr.Zero;
-            bool pathSafe = true, packetSafe = true;
+            IntPtr pathPointer = IntPtr.Zero, packetPointer = IntPtr.Zero, probePointer = IntPtr.Zero;
+            bool pathSafe = true, packetSafe = true, probeSafe = true;
             try {
                 byte[] pathData = Encoding.Unicode.GetBytes(Path.GetFullPath(dll) + "\0");
                 pathPointer = Allocate(process, pathData.Length, "DLL path");
@@ -195,8 +195,43 @@ namespace FrostmourneGui {
                 if (apStatus != 0x41500001)
                     throw new InvalidOperationException("Auto Pickpocket CORE status FAIL: 0x" + apStatus.ToString("X8"));
                 log("ETAP auto_pickpocket_core=PASS status=IN_PROCESS_INERT adapter=NIEZAIMPLEMENTOWANY gameplay_actions=WYLACZONE pid=" + pid);
-                return "PASS: DLL w Wow.exe PID=" + pid + ", ABI=1.0, AP CORE=READY; BRAK ADAPTERA / bez okradania NPC";
+                // Read-only binding probe: samples only known Lua registration pairs and
+                // function prologues. It neither calls WoW functions nor reads live units.
+                uint probeRva = ExportRva(dll, "_Frostmourne_ProbeInterruptBindings@4");
+                byte[] probePacket = new byte[32];
+                Buffer.BlockCopy(BitConverter.GetBytes((uint)32), 0, probePacket, 0, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes((uint)target.Id), 0, probePacket, 4, 4);
+                probePointer = Allocate(process, probePacket.Length, "Interrupt probe packet");
+                Write(process, probePointer, probePacket, "Interrupt probe packet");
+                uint probeResult;
+                try {
+                    probeResult = Invoke(process, Ptr(checked(loadedBase + probeRva)), probePointer,
+                                         "Frostmourne_ProbeInterruptBindings", log);
+                } catch (TimeoutException) {
+                    probeSafe = false;
+                    throw;
+                }
+                byte[] observed = Read(process, probePointer, probePacket.Length, "Interrupt probe packet");
+                uint packetResult = BitConverter.ToUInt32(observed, 8);
+                uint probePid = BitConverter.ToUInt32(observed, 12);
+                uint imageBase = BitConverter.ToUInt32(observed, 16);
+                uint registrations = BitConverter.ToUInt32(observed, 20);
+                uint prologues = BitConverter.ToUInt32(observed, 24);
+                uint probeError = BitConverter.ToUInt32(observed, 28);
+                log("ETAP interrupt_bindings pid=" + probePid + " image=0x" + imageBase.ToString("X8") +
+                    " registrations=0x" + registrations.ToString("X2") +
+                    " prologues=0x" + prologues.ToString("X2") + " win32=" + probeError +
+                    " actions=WYLACZONE live_cast=NOT_READ");
+                if (probeResult != 0xF17A1234 || packetResult != probeResult ||
+                    probePid != (uint)target.Id || imageBase != 0x00400000 ||
+                    registrations != 0xF || prologues != 0xF || probeError != 0)
+                    throw new InvalidOperationException("READ-ONLY interrupt binding probe FAIL; check stage/bitmasks in log");
+                log("ETAP interrupt_bindings=PASS pid=" + probePid +
+                    " sampled=4_registration_pairs_and_4_function_prologues live_cast=NOT_READ kick=DISABLED");
+                return "PASS: DLL PID=" + pid + ", CAST BINDINGS=PASS (read-only); Auto Kick WYLACZONY";
             } finally {
+                if (probePointer != IntPtr.Zero && probeSafe)
+                    VirtualFreeEx(process, probePointer, UIntPtr.Zero, MemRelease);
                 if (packetPointer != IntPtr.Zero && packetSafe)
                     VirtualFreeEx(process, packetPointer, UIntPtr.Zero, MemRelease);
                 if (pathPointer != IntPtr.Zero && pathSafe)

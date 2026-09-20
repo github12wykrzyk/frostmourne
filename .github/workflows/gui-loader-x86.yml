@@ -8,6 +8,8 @@ on:
       - 'src/bootstrap/bootstrap.c'
       - 'src/bootstrap/bootstrap.h'
       - 'src/auto_pickpocket/**'
+      - 'src/auto_interrupt/addon/**'
+      - 'docs/AUTO_INTERRUPT.md'
       - 'tools/package_gui_loader.py'
       - 'docs/GUI_LOADER_TEST.md'
       - '.github/workflows/gui-loader-x86.yml'

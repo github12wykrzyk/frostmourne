@@ -295,7 +295,7 @@ namespace FrostmourneGui {
                         dllState = "PASS";
                         bootstrap.Status = "PASS: zaladowana i zainicjalizowana w PID " + game.Id;
                         resultInfo.Text = outcome;
-                        dllInfo.Text = "DLL w Wow.exe: PASS | ABI=1.0 | Auto Pickpocket CORE=READY, adapter=BRAK";
+                        dllInfo.Text = "DLL w Wow.exe: PASS | ABI=1.0 | CAST BINDINGS=PASS (tylko odczyt); Auto Kick OFF";
                         Write("ETAP test_inprocess=PASS pid=" + game.Id + " sha256=" + bootstrap.Hash);
                     } catch (Exception ex) {
                         dllState = "FAIL";

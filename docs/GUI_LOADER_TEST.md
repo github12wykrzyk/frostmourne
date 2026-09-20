@@ -2,6 +2,35 @@
 
 Target: the exact registered WoW 3.3.5a build 12340 x86 client, SHA256 `edba72ae4188bda717eec73b733aab9cb2f4ab7d4a1e22b44e60d81743648ebd`.
 
+
+## Auto Interrupt — first live diagnostic (NO automatic Kick)
+
+This package contains the pinned experimental bootstrap with read-only
+`Frostmourne_ProbeInterruptBindings` and a separate read-only addon
+`FrostmourneCastProbe`. The DLL checks four Lua registration table pairs and
+four function prologues **inside the actual launched game process** against the
+exact reference binary. It does NOT resolve a live unit pointer, call native
+game functions, watch current casts, execute Kick or enable any gameplay
+automation. The loader prints `interrupt_bindings=PASS` only after confirming
+the same PID, image base, mask=0xF for registrations and code prologues, and
+successful in-process initialization. A failed probe stops the diagnostic stage;
+the launcher does not attempt to bypass security controls.
+
+The separate addon uses only the ordinary in-game Lua API to observe
+`UnitCastingInfo`, `UnitChannelInfo` and `UnitGUID` for target/focus.
+The addon does NOT communicate with the DLL: its live cast samples are
+independent evidence, not proof of a native DLL read. To enable it, extract
+the included `FrostmourneCastProbe` folder into the target game's
+`Interface\\AddOns` before launching the game. Once logged in,
+type `/fmcast on`, select an enemy casting a spell and observe the printed
+GUID, spell name, remaining time, interruptible flag and cast/channel status;
+`/fmcast off` stops updates. The addon does not cast anything.
+
+Use only an isolated, authorized local test. Preserve the GUI log and in-game
+cast print or screenshot after one test. Do not disable antivirus or anti-cheat,
+combine older loader/DLL/pin files, or treat an addon-only success as native
+bridge readiness. The ZIP contains no Wow.exe and does not alter the game client.
+
 ## Auto Pickpocket in-process diagnostic (NOT gameplay)
 
 This experimental ZIP now contains an x86 FrostmourneBootstrap.dll linked with
