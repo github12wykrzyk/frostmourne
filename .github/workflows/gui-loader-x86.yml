@@ -5,6 +5,10 @@ on:
     branches: [work]
     paths:
       - 'src/loader/**'
+      - 'src/bootstrap/**'
+      - 'src/auto_pickpocket/**'
+      - 'src/auto_interrupt/kick_native_bridge.c'
+      - 'src/auto_interrupt/addon/**'
       - 'tools/package_universal_loader.py'
       - 'docs/UNIVERSAL_LOADER.md'
       - 'tools/package_gui_loader.py'
