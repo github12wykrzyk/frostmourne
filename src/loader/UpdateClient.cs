@@ -234,6 +234,30 @@ namespace FrostmourneGui {
             foreach (string directory in Directory.GetDirectories(source))
                 CopyTree(directory, Path.Combine(destination, Path.GetFileName(directory)));
         }
+        // CI-only end-to-end test: exercises the public GitHub feed, ZIP download,
+        // atomic installation and failure before swap on a deliberately invalid SHA.
+        internal static bool IntegrationTest() {
+            try {
+                if (Directory.Exists(Base) || File.Exists(StateFile)) return false;
+                UpdateFeed feed = Fetch("work");
+                if (feed.packages.Length == 0) return false;
+                string result = Apply(feed, () => false, message => {});
+                List<Module> actual = ModuleCatalog.DiscoverAt(Base, message => {});
+                if (actual.Count == 0 || actual.Any(m => m.Manifest == null ||
+                    !m.Status.StartsWith("ZWERYFIKOWANY"))) return false;
+                string dll = actual[0].Path;
+                string before = Verify.Hash(dll);
+                UpdateFeed invalid = Fetch("work");
+                invalid.packages[0].sha256 = new string('0', 64);
+                invalid.packages[0].version += "-sha-invalid";
+                bool failed = false;
+                try { Apply(invalid, () => false, message => {}); }
+                catch (InvalidDataException) { failed = true; }
+                if (!failed || !File.Exists(dll) || Verify.Hash(dll) != before) return false;
+                if (Pending(feed, message => {}).Count != 0) return false;
+                return result.Contains("Zainstalowano");
+            } catch { return false; }
+        }
         internal static bool SelfTest() {
             try {
                 var good = new UpdateFeed { schema_version = 1, channel = "work",
