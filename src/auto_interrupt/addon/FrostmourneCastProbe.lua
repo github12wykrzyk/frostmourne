@@ -7,6 +7,11 @@ local lastKickRequestAt = 0
 local lastKickRequestCount = 0
 local lastTrial = nil
 local lastConfirmed = nil
+local diagnosticsTicks = 0
+local diagnosticsLiveCasts = 0
+local diagnosticsLastCast = "none"
+local diagnosticsLastScan = "waiting for UI tick"
+local diagnosticsMarkers = 0
 local frame = CreateFrame("Frame")
 local elapsed = 0
 local lastKey = ""
@@ -67,6 +72,12 @@ local function kickDiagnostics()
     local remaining = starts and ends and math.floor(ends - GetTime() * 1000) or -1
     local range = name and IsSpellInRange(name, "target")
     local usable, lacksResource = IsUsableSpell(1766)
+    say("DIAG ticks=" .. tostring(diagnosticsTicks) ..
+        " casts_seen=" .. tostring(diagnosticsLiveCasts) ..
+        " last_scan=" .. tostring(diagnosticsLastScan) ..
+        " last_cast=" .. tostring(diagnosticsLastCast) ..
+        " markers_sent=" .. tostring(diagnosticsMarkers) ..
+        " last_block=" .. tostring(lastPrecheck or "none"))
     say("DIAG addon=" .. (kickRequests and "TRIAL" or "OFF") ..
         " class=" .. tostring(select(2, UnitClass("player"))) ..
         " target=" .. tostring(target) ..
@@ -82,16 +93,46 @@ end
 -- UI-thread, opt-in diagnostic marker. DLL independently verifies the GUID
 -- and cast in the exact registered game client before attempting a Kick.
 local function requestNativeKick()
-    if not kickRequests then return end
+    diagnosticsTicks = diagnosticsTicks + 1
+    if not kickRequests then
+        diagnosticsLastScan = "addon trial OFF"
+        return
+    end
+    diagnosticsLastScan = "checking player and target"
     if select(2,UnitClass("player")) ~= "ROGUE" or UnitIsDeadOrGhost("player") then
+        diagnosticsLastScan = "requires a living Rogue"
         notePrecheck("wymagany zywy Rogue"); return
     end
-    if not UnitExists("target") or not UnitCanAttack("player","target") or
-        UnitIsDeadOrGhost("target") then return end
+    if not UnitExists("target") then
+        diagnosticsLastScan = "no selected target"
+        return
+    end
+    if not UnitCanAttack("player","target") or UnitIsDeadOrGhost("target") then
+        diagnosticsLastScan = "target is not a living hostile unit"
+        return
+    end
     local name,_,_,_,starts,ends,_,_,noKick = UnitCastingInfo("target")
-    if not name then name,_,_,_,starts,ends,_,noKick = UnitChannelInfo("target") end
-    if not name or not starts or not ends then return end
-    if noKick then notePrecheck("cast nieprzerywalny: " .. tostring(name)); return end
+    local mode = "CAST"
+    if not name then
+        name,_,_,_,starts,ends,_,noKick = UnitChannelInfo("target")
+        mode = "CHANNEL"
+    end
+    if not name or not starts or not ends then
+        diagnosticsLastScan = "no active cast on selected target"
+        return
+    end
+    diagnosticsLiveCasts = diagnosticsLiveCasts + 1
+    diagnosticsLastCast = tostring(name) .. ":" .. mode
+    diagnosticsLastScan = "live cast found: checking preconditions"
+    if mode == "CHANNEL" then
+        diagnosticsLastScan = "channel observed; native adapter verifies casts only"
+        notePrecheck("channel: adapter natywny sprawdza tylko CAST, nie CHANNEL")
+        return
+    end
+    if noKick then
+        diagnosticsLastScan = "noninterruptible cast"
+        notePrecheck("cast nieprzerywalny: " .. tostring(name)); return
+    end
     local remaining = ends - GetTime()*1000
     -- ASAP: do not wait for a configurable late-cast window. Require a live cast
     -- and a short end-of-cast safety margin so an expired spell is never kicked.
@@ -102,6 +143,7 @@ local function requestNativeKick()
     if not spellName then notePrecheck("brak wyuczonego Kick (ID 1766)"); return end
     local range = IsSpellInRange(spellName,"target")
     if range ~= 1 then
+        diagnosticsLastScan = "kick range check failed: " .. tostring(range)
         notePrecheck("Kick poza zasiegiem / brak danych range=" .. tostring(range)); return
     end
     local energy = UnitPower("player",3)
@@ -129,10 +171,15 @@ local function requestNativeKick()
     -- object or clock). Retry with a FRESH cast on the next UI ticks; never
     -- retry indefinitely or reuse an old cast after it ends/target switches.
     if lastKickRequestCount >= 4 or
-        (lastKickRequestAt > 0 and now-lastKickRequestAt < 0.15) then return end
+        (lastKickRequestAt > 0 and now-lastKickRequestAt < 0.15) then
+        diagnosticsLastScan = "bounded retry throttle / max 4 markers"
+        return
+    end
     lastKickRequestAt=now
     lastKickRequestCount=lastKickRequestCount+1
     lastTrial = { guid=guid, when=now, token=token }
+    diagnosticsMarkers = diagnosticsMarkers + 1
+    diagnosticsLastScan = "native marker submitted; awaiting DLL proof"
     if lastKickRequestCount == 1 then
         say("KICK ASAP: pierwsze zadanie do DLL; wynik NIEPOTWIERDZONY; GUID="..guid)
     end
@@ -225,8 +272,17 @@ SlashCmdList["FROSTMOURNECASTPROBE"] = function(msg)
         say("OFF")
     elseif msg == "diag" then
         kickDiagnostics()
+    elseif msg == "bridge" then
+        -- Deliberately malformed marker. It exercises hook reception ONLY:
+        -- parse_request rejects BAD_DIAG before any native unit lookup/cast.
+        if not kickRequests then
+            say("BRIDGE PING SKIPPED: Auto Kick trial OFF in this addon")
+            return
+        end
+        say("BRIDGE PING: marker diagnostyczny (nigdy nie uruchamia Kick); sprawdz kick-PID.log")
+        UnitCastingInfo("FMKICK12340|BAD_DIAG")
     else
-        say("Status=" .. (running and "ON" or "OFF") .. " | Kick trial=" .. (kickRequests and "ON (niepotwierdzony)" or "OFF") .. " | /fmcast on | /fmcast off | /fmcast diag")
+        say("Status=" .. (running and "ON" or "OFF") .. " | Kick trial=" .. (kickRequests and "ON (niepotwierdzony)" or "OFF") .. " | /fmcast on | /fmcast off | /fmcast diag | /fmcast bridge")
         if running then
             local text = sample("target")
             if text then say(text) else say("No current target cast.") end
